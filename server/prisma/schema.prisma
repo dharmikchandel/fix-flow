@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+model BugReport {
+  id             String       @id @default(cuid())
+  title          String
+  description    String
+  stepsToReproduce String?    @map("steps_to_reproduce")
+  module         String
+  environment    String?
+  severityScore  Int          @map("severity_score")
+  severityLabel  String       @map("severity_label")
+  status         String       @default("open")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  assignment     Assignment?
+
+  @@map("bug_reports")
+}
+
+model User {
+  id          String       @id @default(cuid())
+  name        String
+  email       String       @unique
+  password    String
+  role        String       @default("engineer")
+  expertise   String[]
+  workload    Int          @default(0)
+  maxCapacity Int          @default(5) @map("max_capacity")
+  available   Boolean      @default(true)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  assignments Assignment[]
+
+  @@map("users")
+}
+
+model Assignment {
+  id        String   @id @default(cuid())
+  bugId     String   @unique @map("bug_id")
+  userId    String   @map("user_id")
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  bug  BugReport @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("assignments")
+}
