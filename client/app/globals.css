@@ -1,26 +1,84 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-0: #0B0F14;
+  --bg-1: #10151D;
+  --bg-2: #151B24;
+  --bg-3: #1A2130;
+  --border-1: #263041;
+  --border-2: rgba(99, 179, 237, 0.22);
+  --text-1: #F3F6FA;
+  --text-2: #B6C0CE;
+  --text-3: #7D8898;
+
+  --primary: #2F80FF;
+  --primary-strong: #5BA7FF;
+  --primary-soft: rgba(47, 128, 255, 0.14);
+  --danger: #FF4D6D;
+  --danger-soft: rgba(255, 77, 109, 0.14);
+  --warning: #FFD24A;
+  --warning-soft: rgba(255, 210, 74, 0.14);
+  --success: #2EE59D;
+  --success-soft: rgba(46, 229, 157, 0.14);
+  --info: #36D6FF;
+  --info-soft: rgba(54, 214, 255, 0.14);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  
+  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.36);
+  --glow-primary: 0 0 0 1px rgba(47, 128, 255, 0.24), 0 0 18px rgba(47, 128, 255, 0.18);
+  --glow-danger: 0 0 0 1px rgba(255, 77, 109, 0.24), 0 0 18px rgba(255, 77, 109, 0.18);
+  --glow-warning: 0 0 0 1px rgba(255, 210, 74, 0.20), 0 0 18px rgba(255, 210, 74, 0.12);
+
+  --background: var(--bg-0);
+  --foreground: var(--text-1);
 }
 
 @theme inline {
+  --color-bg-0: var(--bg-0);
+  --color-bg-1: var(--bg-1);
+  --color-bg-2: var(--bg-2);
+  --color-bg-3: var(--bg-3);
+  --color-border-1: var(--border-1);
+  --color-border-2: var(--border-2);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-soft: var(--primary-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-glow-primary: var(--glow-primary);
+  --shadow-glow-danger: var(--glow-danger);
+  --shadow-glow-warning: var(--glow-warning);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }

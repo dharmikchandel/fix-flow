@@ -21,10 +21,10 @@ app.get("/health", (_req, res) => {
 });
 
 // Routes
-app.use("/bugs", bugRoutes);
-app.use("/assign", assignmentRoutes);
-app.use("/priority", priorityRoutes);
-app.use("/users", userRoutes);
+app.use("/api/bugs", bugRoutes);
+app.use("/api/assign", assignmentRoutes);
+app.use("/api/priority", priorityRoutes);
+app.use("/api/users", userRoutes);
 
 // Global Error Handler
 app.use(errorHandler);
