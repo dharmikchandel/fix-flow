@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 
+import type { Request, Response } from "express";
+
 import bugRoutes from "./routes/bugRoutes.js";
 import assignmentRoutes from "./routes/assignmentRoutes.js";
 import priorityRoutes from "./routes/priorityRoutes.js";
@@ -16,7 +18,7 @@ app.use(express.json());
 app.use(morgan("dev"));
 
 // Health Check
-app.get("/health", (_req, res) => {
+app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
