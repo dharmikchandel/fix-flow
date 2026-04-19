@@ -11,8 +11,7 @@ import type {
 
 import axios, { AxiosRequestConfig } from "axios"
 
-const isServer = typeof window === "undefined"
-const BASE = isServer ? process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000/api" : "/api"
+const BASE = process.env.NEXT_PUBLIC_API_URL
 
 const client = axios.create({
   baseURL: BASE,
