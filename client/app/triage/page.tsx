@@ -9,8 +9,11 @@ import {
   Search, Loader2, AlertCircle, UserCheck, X
 } from "lucide-react"
 import { getPriorityQueue, assignBug } from "@/lib/api"
+import { useAuth } from "@/components/auth/auth-provider"
 import type { PriorityItem } from "@/lib/types"
 import { severityVariant, statusVariant } from "@/lib/badge-helpers"
+
+const MANAGEMENT_ROLES = ["lead", "manager"]
 
 function Toast({ message, type, onDismiss }: {
   message: string; type: "success" | "error"; onDismiss: () => void
@@ -30,6 +33,9 @@ function Toast({ message, type, onDismiss }: {
 }
 
 export default function TriageQueuePage() {
+  const { user } = useAuth()
+  const isManager = user ? MANAGEMENT_ROLES.includes(user.role) : false
+
   const [queue, setQueue] = useState<PriorityItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
@@ -196,7 +202,11 @@ export default function TriageQueuePage() {
                     </div>
 
                     <div className="col-span-2 flex justify-end">
-                      {!item.assignedTo ? (
+                      {item.assignedTo ? (
+                        <span className="text-[10px] font-mono text-[var(--success)] px-2">
+                          ✓ assigned
+                        </span>
+                      ) : isManager ? (
                         <Button
                           variant="secondary"
                           size="sm"
@@ -212,8 +222,8 @@ export default function TriageQueuePage() {
                           Assign
                         </Button>
                       ) : (
-                        <span className="text-[10px] font-mono text-[var(--success)] px-2">
-                          ✓ assigned
+                        <span className="text-[10px] font-mono text-[var(--text-3)] px-2">
+                          unassigned
                         </span>
                       )}
                     </div>

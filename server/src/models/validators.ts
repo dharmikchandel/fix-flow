@@ -41,6 +41,35 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const registerSchema = z.object({
+  organizationName: z
+    .string()
+    .min(2, "Organization name must be at least 2 characters")
+    .max(100, "Organization name must not exceed 100 characters"),
+  name: z
+    .string()
+    .min(2, "Name must be at least 2 characters")
+    .max(100, "Name must not exceed 100 characters"),
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+export const createInviteSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  role: z.enum(["engineer", "lead", "manager"]).optional(),
+  expertise: z.array(z.string()).optional(),
+  maxCapacity: z.number().int().min(1).max(20).optional(),
+});
+
+export const acceptInviteSchema = z.object({
+  token: z.string().min(1, "Invite token is required"),
+  name: z
+    .string()
+    .min(2, "Name must be at least 2 characters")
+    .max(100, "Name must not exceed 100 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
 export const createUserSchema = z.object({
   name: z
     .string()

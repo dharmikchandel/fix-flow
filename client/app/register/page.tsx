@@ -6,11 +6,13 @@ import Link from "next/link"
 import { Loader2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AuthCard, authInputClass } from "@/components/auth/auth-card"
-import { login } from "@/lib/api"
+import { register } from "@/lib/api"
 import { setToken } from "@/lib/auth"
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter()
+  const [organizationName, setOrganizationName] = useState("")
+  const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -21,9 +23,9 @@ export default function LoginPage() {
     setError("")
 
     startTransition(async () => {
-      const res = await login(email, password)
+      const res = await register({ organizationName, name, email, password })
       if (!res.success || !res.data) {
-        setError(res.error ?? "Login failed.")
+        setError(res.error ?? "Could not create your workspace.")
         return
       }
       setToken(res.data.token)
@@ -33,27 +35,49 @@ export default function LoginPage() {
 
   return (
     <AuthCard
-      subtitle="Sign in to the triage console."
+      subtitle="Create a new workspace for your team."
       footer={
         <>
-          New team?{" "}
-          <Link href="/register" className="text-[var(--primary-strong)] hover:text-[var(--primary)] transition-colors">
-            Create a workspace
+          Already have an account?{" "}
+          <Link href="/login" className="text-[var(--primary-strong)] hover:text-[var(--primary)] transition-colors">
+            Sign in
           </Link>
         </>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--text-2)] uppercase tracking-wider">Workspace name</label>
+          <input
+            value={organizationName}
+            onChange={(e) => setOrganizationName(e.target.value)}
+            placeholder="Acme Engineering"
+            className={authInputClass}
+            required
+            autoFocus
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--text-2)] uppercase tracking-wider">Your name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Jordan Lee"
+            className={authInputClass}
+            required
+          />
+        </div>
+
+        <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--text-2)] uppercase tracking-wider">Email</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@fixflow.dev"
+            placeholder="you@company.com"
             className={authInputClass}
             required
-            autoFocus
           />
         </div>
 
@@ -63,9 +87,10 @@ export default function LoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
+            placeholder="At least 6 characters"
             className={authInputClass}
             required
+            minLength={6}
           />
         </div>
 
@@ -78,7 +103,7 @@ export default function LoginPage() {
 
         <Button type="submit" variant="default" className="w-full" disabled={isPending}>
           {isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-          Sign in
+          Create workspace
         </Button>
       </form>
     </AuthCard>

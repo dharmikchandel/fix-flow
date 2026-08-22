@@ -7,39 +7,63 @@ datasource db {
   provider  = "postgresql"
 }
 
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users   User[]
+  bugs    BugReport[]
+  invites Invite[]
+
+  @@map("organizations")
+}
+
 model BugReport {
-  id             String       @id @default(cuid())
-  title          String
-  description    String
-  stepsToReproduce String?    @map("steps_to_reproduce")
-  module         String
-  environment    String?
-  severityScore  Int          @map("severity_score")
-  severityLabel  String       @map("severity_label")
-  status         String       @default("open")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  id               String    @id @default(cuid())
+  organizationId   String    @map("organization_id")
+  reporterId       String?   @map("reporter_id")
+  title            String
+  description      String
+  stepsToReproduce String?   @map("steps_to_reproduce")
+  module           String
+  environment      String?
+  severityScore    Int       @map("severity_score")
+  severityLabel    String    @map("severity_label")
+  status           String    @default("open")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  assignment     Assignment?
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // A bug outlives the reporter's account — deleting a user un-links their
+  // reports instead of deleting them.
+  reporter     User?         @relation("ReportedBugs", fields: [reporterId], references: [id], onDelete: SetNull)
+  assignment   Assignment?
 
+  @@index([organizationId])
   @@map("bug_reports")
 }
 
 model User {
-  id          String       @id @default(cuid())
-  name        String
-  email       String       @unique
-  password    String
-  role        String       @default("engineer")
-  expertise   String[]
-  workload    Int          @default(0)
-  maxCapacity Int          @default(5) @map("max_capacity")
-  available   Boolean      @default(true)
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  name           String
+  email          String   @unique
+  password       String
+  role           String   @default("engineer")
+  expertise      String[]
+  workload       Int      @default(0)
+  maxCapacity    Int      @default(5) @map("max_capacity")
+  available      Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
-  assignments Assignment[]
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignments  Assignment[]
+  reportedBugs BugReport[]  @relation("ReportedBugs")
 
+  @@index([organizationId])
   @@map("users")
 }
 
@@ -54,4 +78,26 @@ model Assignment {
   user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("assignments")
+}
+
+/// A pending invitation to join an organization. The invited person accepts
+/// it with a one-time token and sets their own password — the person who
+/// sends the invite never sees or picks their password.
+model Invite {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  email          String
+  role           String    @default("engineer")
+  expertise      String[]
+  maxCapacity    Int       @default(5) @map("max_capacity")
+  token          String    @unique
+  invitedById    String    @map("invited_by_id")
+  expiresAt      DateTime  @map("expires_at")
+  acceptedAt     DateTime? @map("accepted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("invites")
 }

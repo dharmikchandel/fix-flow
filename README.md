@@ -150,13 +150,18 @@ Defined in `server/prisma/schema.prisma`:
 
 Base path: `/api`
 
-Every route below except `/health` and `POST /auth/login` requires a valid `Authorization: Bearer <token>` header, obtained by logging in. Routes marked **lead/manager** additionally require that role.
+FixFlow is multi-tenant: every account belongs to exactly one **organization** (a team's workspace), and every route below except `/health`, `POST /auth/login`, `POST /auth/register`, and `POST /invites/accept` requires a valid `Authorization: Bearer <token>` header. Every response is scoped to your own organization's data only. Routes marked **lead/manager** additionally require that role.
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | Health check |
+| `POST` | `/auth/register` | Create a brand-new organization and its first (manager) account |
 | `POST` | `/auth/login` | Log in with email + password, returns a JWT |
 | `GET` | `/auth/me` | Get the currently logged-in user |
+| `POST` | `/invites` | **lead/manager.** Create an invite link for a new teammate |
+| `GET` | `/invites` | **lead/manager.** List pending invites |
+| `DELETE` | `/invites/:id` | **lead/manager.** Revoke a pending invite |
+| `POST` | `/invites/accept` | Accept an invite: set a name + password and join |
 | `POST` | `/bugs` | Submit a new bug (runs severity scoring + duplicate detection) |
 | `GET` | `/bugs` | List bugs (optionally filter by `?status=`) |
 | `GET` | `/bugs/:id` | Get a single bug |
@@ -165,8 +170,8 @@ Every route below except `/health` and `POST /auth/login` requires a valid `Auth
 | `POST` | `/assign/manual` | **lead/manager.** Assign a bug to a specific engineer |
 | `DELETE` | `/assign/:bugId` | **lead/manager.** Unassign a bug |
 | `GET` | `/priority` | Get the current priority queue |
-| `POST` | `/users` | **lead/manager.** Create an engineer/user |
-| `GET` | `/users` | List users |
+| `POST` | `/users` | **lead/manager.** Create an engineer/user directly (no invite) |
+| `GET` | `/users` | List users in your organization |
 | `GET` | `/users/:id` | Get a single user |
 | `PATCH` | `/users/:id/availability` | Toggle availability — your own, or any user's if you're lead/manager |
 
@@ -257,7 +262,7 @@ npm run dev           # starts the Next.js app on http://localhost:3000
 | `npm run prisma:generate` | Generate the Prisma client |
 | `npm run prisma:migrate` | Run Prisma migrations |
 | `npm run prisma:studio` | Open Prisma Studio |
-| `npm run prisma:seed` | Wipe and reseed the database with a demo manager, engineers, and bugs |
+| `npm run prisma:seed` | Wipe and reseed the database with two demo organizations, each with a manager, engineers, and bugs |
 
 **Client** (`client/package.json`)
 

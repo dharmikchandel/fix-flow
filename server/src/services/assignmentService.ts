@@ -26,7 +26,8 @@ interface AssigneeSelection {
  * Prefers an available, under-capacity engineer whose expertise matches the
  * bug's module, picking the one with the lowest current workload. Falls back
  * to any available, under-capacity engineer (regardless of expertise) if no
- * specialist is free.
+ * specialist is free. The caller is responsible for only passing in
+ * engineers from the right organization.
  */
 export function selectAssignee(
   engineers: AssignmentCandidate[],
@@ -97,9 +98,14 @@ async function claimAssignment(
   }
 }
 
-async function loadAssignableBug(bugId: string) {
-  const bug = await prisma.bugReport.findUnique({
-    where: { id: bugId },
+/**
+ * Loads a bug that's eligible to be assigned, scoped to the caller's
+ * organization — a bug in someone else's org is treated as not found, not
+ * as a permissions error, so its existence isn't leaked across organizations.
+ */
+async function loadAssignableBug(bugId: string, organizationId: string) {
+  const bug = await prisma.bugReport.findFirst({
+    where: { id: bugId, organizationId },
     include: { assignment: true },
   });
 
@@ -119,13 +125,14 @@ async function loadAssignableBug(bugId: string) {
 /**
  * Assign a bug to the best-fit engineer, per the rules in `selectAssignee`.
  * Retries a handful of times if two assignments race for the same engineer's
- * last capacity slot.
+ * last capacity slot. Both the bug and the candidate engineers are scoped to
+ * the caller's organization.
  */
-export async function assignBug(bugId: string): Promise<AssignmentResult> {
-  const bug = await loadAssignableBug(bugId);
+export async function assignBug(bugId: string, organizationId: string): Promise<AssignmentResult> {
+  const bug = await loadAssignableBug(bugId, organizationId);
 
   for (let attempt = 1; attempt <= MAX_CLAIM_ATTEMPTS; attempt++) {
-    const engineers = await prisma.user.findMany({ where: { role: "engineer" } });
+    const engineers = await prisma.user.findMany({ where: { role: "engineer", organizationId } });
     const { assignee, reason } = selectAssignee(engineers, bug.module);
 
     try {
@@ -150,11 +157,17 @@ export async function assignBug(bugId: string): Promise<AssignmentResult> {
  * Assign a bug to a specific engineer chosen by a triage lead, instead of
  * letting the matching algorithm pick. Still enforces availability and
  * capacity — a lead can choose *who*, not bypass *whether they have room*.
+ * The engineer must belong to the same organization as the bug; if not,
+ * this is treated as "engineer not found" rather than a permissions error.
  */
-export async function assignBugToEngineer(bugId: string, engineerId: string): Promise<AssignmentResult> {
-  const bug = await loadAssignableBug(bugId);
+export async function assignBugToEngineer(
+  bugId: string,
+  engineerId: string,
+  organizationId: string,
+): Promise<AssignmentResult> {
+  const bug = await loadAssignableBug(bugId, organizationId);
 
-  const engineer = await prisma.user.findUnique({ where: { id: engineerId } });
+  const engineer = await prisma.user.findFirst({ where: { id: engineerId, organizationId } });
   if (!engineer) {
     throw AppError.notFound(`Engineer with ID "${engineerId}" not found`);
   }
@@ -191,12 +204,18 @@ export async function assignBugToEngineer(bugId: string, engineerId: string): Pr
 }
 
 /**
- * Unassign a bug and decrement the engineer's workload.
+ * Unassign a bug and decrement the engineer's workload. Scoped to the
+ * caller's organization via the bug the assignment points to (`Assignment`
+ * rows don't carry their own organizationId — they're always looked up
+ * through a bug, which is org-scoped).
  */
-export async function unassignBug(bugId: string): Promise<void> {
-  const assignment = await prisma.assignment.findUnique({ where: { bugId } });
+export async function unassignBug(bugId: string, organizationId: string): Promise<void> {
+  const assignment = await prisma.assignment.findUnique({
+    where: { bugId },
+    include: { bug: { select: { organizationId: true } } },
+  });
 
-  if (!assignment) {
+  if (!assignment || assignment.bug.organizationId !== organizationId) {
     throw AppError.notFound(`No assignment found for bug "${bugId}"`);
   }
 

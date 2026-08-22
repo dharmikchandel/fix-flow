@@ -13,10 +13,19 @@ export async function login(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * POST /auth/register — create a brand-new organization and its first
+ * (manager) account.
+ */
+export async function register(req: Request, res: Response): Promise<void> {
+  const result = await authService.register(req.body);
+  res.status(201).json({ success: true, data: result });
+}
+
+/**
  * GET /auth/me — who am I, based on the current token
  */
 export async function me(req: Request, res: Response): Promise<void> {
-  const user = await userService.getUserById(req.user!.id);
+  const user = await userService.getAuthenticatedProfile(req.user!.id, req.user!.organizationId);
   if (!user) {
     throw AppError.unauthorized("Account no longer exists");
   }

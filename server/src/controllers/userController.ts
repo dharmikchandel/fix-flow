@@ -4,13 +4,13 @@ import { AppError } from "../utils/AppError.js";
 import type { CreateUserInput, ApiResponse } from "../models/types.js";
 
 /**
- * POST /users — Register a new engineer/user
+ * POST /users — Register a new engineer/user in the caller's organization
  */
 export async function createUser(req: Request, res: Response): Promise<void> {
   const input: CreateUserInput = req.body;
 
   try {
-    const user = await userService.createUser(input);
+    const user = await userService.createUser(input, req.user!.organizationId);
     res.status(201).json({ success: true, data: user } as ApiResponse<typeof user>);
   } catch (err: any) {
     // Prisma unique constraint violation — the one place we still need a
@@ -23,18 +23,18 @@ export async function createUser(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * GET /users — List all users
+ * GET /users — List all users in the caller's organization
  */
-export async function listUsers(_req: Request, res: Response): Promise<void> {
-  const users = await userService.listUsers();
+export async function listUsers(req: Request, res: Response): Promise<void> {
+  const users = await userService.listUsers(req.user!.organizationId);
   res.json({ success: true, data: users });
 }
 
 /**
- * GET /users/:id — Get user by ID
+ * GET /users/:id — Get a user by ID, if they're in the caller's organization
  */
 export async function getUser(req: Request, res: Response): Promise<void> {
-  const user = await userService.getUserById(String(req.params["id"]));
+  const user = await userService.getUserById(String(req.params["id"]), req.user!.organizationId);
 
   if (!user) {
     throw AppError.notFound("User not found");
@@ -60,6 +60,6 @@ export async function toggleAvailability(req: Request, res: Response): Promise<v
   }
 
   const { available } = req.body;
-  const user = await userService.toggleAvailability(targetId, available);
+  const user = await userService.toggleAvailability(targetId, available, req.user!.organizationId);
   res.json({ success: true, data: user });
 }

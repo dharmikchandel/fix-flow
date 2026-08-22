@@ -24,11 +24,14 @@ const MAX_DUPLICATES = 5;
 export async function findDuplicates(
   title: string,
   description: string,
+  organizationId: string,
   excludeBugId?: string,
 ): Promise<DuplicateMatch[]> {
-  // Fetch existing open bugs to compare against
+  // Fetch existing open bugs to compare against — scoped to this organization,
+  // since a bug in someone else's workspace is never a real duplicate here.
   const existingBugs = await prisma.bugReport.findMany({
     where: {
+      organizationId,
       status: { not: "closed" },
       ...(excludeBugId ? { id: { not: excludeBugId } } : {}),
     },

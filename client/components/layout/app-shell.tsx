@@ -4,11 +4,13 @@ import { usePathname } from "next/navigation"
 import { Sidebar } from "./sidebar"
 import { Navbar } from "./navbar"
 
-/** The login page renders full-bleed, with no sidebar/navbar chrome around it. */
+const CHROME_LESS_PAGES = ["/login", "/register", "/accept-invite"]
+
+/** Auth pages render full-bleed, with no sidebar/navbar chrome around them. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
-  if (pathname === "/login") {
+  if (CHROME_LESS_PAGES.includes(pathname)) {
     return <>{children}</>
   }
 

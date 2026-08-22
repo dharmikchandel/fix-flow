@@ -73,6 +73,22 @@ export interface PriorityItem {
   status: string;
 }
 
+// ─── Auth Types ───────────────────────────────────────────────────────────────
+
+export interface AuthenticatedUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  organizationId: string;
+  organizationName: string;
+}
+
+export interface SessionResult {
+  token: string;
+  user: AuthenticatedUser;
+}
+
 // ─── API Response Wrapper ────────────────────────────────────────────────────
 
 export interface ApiResponse<T> {

@@ -5,8 +5,8 @@ import type { ApiResponse, PriorityItem } from "../models/types.js";
 /**
  * GET /priority — Generate and return the current priority queue
  */
-export async function getPriorityQueue(_req: Request, res: Response): Promise<void> {
-  const queue = await priorityService.generatePriorityQueue();
+export async function getPriorityQueue(req: Request, res: Response): Promise<void> {
+  const queue = await priorityService.generatePriorityQueue(req.user!.organizationId);
 
   const response: ApiResponse<PriorityItem[]> = { success: true, data: queue };
   res.json(response);

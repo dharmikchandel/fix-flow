@@ -30,9 +30,10 @@ export function computePriorityScore(
  * Generates a prioritized list of open/assigned bugs, ranked by
  * `computePriorityScore`, most urgent first.
  */
-export async function generatePriorityQueue(): Promise<PriorityItem[]> {
+export async function generatePriorityQueue(organizationId: string): Promise<PriorityItem[]> {
   const bugs = await prisma.bugReport.findMany({
     where: {
+      organizationId,
       status: { in: ["open", "assigned"] },
     },
     include: {

@@ -7,6 +7,7 @@ import type { Request, Response } from "express";
 
 import { env } from "./config/env.js";
 import authRoutes from "./routes/authRoutes.js";
+import inviteRoutes from "./routes/inviteRoutes.js";
 import bugRoutes from "./routes/bugRoutes.js";
 import assignmentRoutes from "./routes/assignmentRoutes.js";
 import priorityRoutes from "./routes/priorityRoutes.js";
@@ -45,6 +46,7 @@ app.get("/health", (_req: Request, res: Response) => {
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/invites", inviteRoutes);
 app.use("/api/bugs", bugRoutes);
 app.use("/api/assign", assignmentRoutes);
 app.use("/api/priority", priorityRoutes);

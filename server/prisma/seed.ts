@@ -5,8 +5,14 @@ import { assignBug } from "../src/services/assignmentService.js";
 import bcrypt from "bcrypt";
 
 /**
- * Seeds a demoable FixFlow instance: a handful of engineers with different
- * expertise/capacity, and a spread of bugs across severities and statuses.
+ * Seeds two separate organizations, so a fresh install demonstrates
+ * multi-tenancy, not just a single team's data:
+ *
+ *   - "FixFlow Labs": the full demo — a manager, 5 engineers with different
+ *     expertise/capacity, and a spread of bugs across severities and statuses.
+ *   - "Nimbus Robotics": a small second org with its own manager, engineer,
+ *     and bug — exists purely so you can log in as each org's manager and
+ *     confirm neither can see the other's data.
  *
  * Runs the real severity engine and assignment engine while seeding (instead
  * of hardcoding fake scores) so the seeded data always matches what the app
@@ -15,7 +21,25 @@ import bcrypt from "bcrypt";
 
 const DEMO_PASSWORD = "changeme123";
 
-const ENGINEERS = [
+interface EngineerSeed {
+  name: string;
+  email: string;
+  expertise: string[];
+  maxCapacity: number;
+  available?: boolean;
+}
+
+interface BugSeed {
+  title: string;
+  description: string;
+  stepsToReproduce?: string;
+  module: string;
+  environment: string;
+}
+
+const FIXFLOW_LABS_MANAGER = { name: "Jordan Lee", email: "jordan@fixflow.dev" };
+
+const FIXFLOW_LABS_ENGINEERS: EngineerSeed[] = [
   { name: "Priya Sharma", email: "priya@fixflow.dev", expertise: ["auth", "security", "api"], maxCapacity: 5 },
   { name: "Diego Alvarez", email: "diego@fixflow.dev", expertise: ["payment", "database"], maxCapacity: 4 },
   { name: "Wei Chen", email: "wei@fixflow.dev", expertise: ["ui", "core"], maxCapacity: 6 },
@@ -23,12 +47,7 @@ const ENGINEERS = [
   { name: "Sam Okafor", email: "sam@fixflow.dev", expertise: ["ui", "docs"], maxCapacity: 3, available: false },
 ];
 
-// A lead/manager account so there's someone who can log in and dispatch bugs
-// or register new engineers on a freshly seeded instance. Not part of the
-// assignable engineer pool (that pool is filtered by role: "engineer").
-const MANAGER = { name: "Jordan Lee", email: "jordan@fixflow.dev", role: "manager" };
-
-const BUGS = [
+const FIXFLOW_LABS_BUGS: BugSeed[] = [
   {
     title: "Login crashes on production for SSO users",
     description: "App crashes with a fatal exception whenever an SSO user attempts to log in on the production environment. Affects roughly 30% of enterprise accounts.",
@@ -81,28 +100,49 @@ const BUGS = [
   },
 ];
 
-async function main() {
-  console.log("Clearing existing data...");
-  await prisma.assignment.deleteMany();
-  await prisma.bugReport.deleteMany();
-  await prisma.user.deleteMany();
+const NIMBUS_MANAGER = { name: "Rae Kowalski", email: "rae@nimbusrobotics.dev" };
+const NIMBUS_ENGINEERS: EngineerSeed[] = [
+  { name: "Marcus Webb", email: "marcus@nimbusrobotics.dev", expertise: ["firmware", "core"], maxCapacity: 4 },
+];
+const NIMBUS_BUGS: BugSeed[] = [
+  {
+    title: "Motor calibration drifts after firmware update",
+    description: "Wheel motor calibration silently drifts out of spec after applying the latest firmware update, causing navigation errors.",
+    module: "firmware",
+    environment: "production",
+  },
+];
 
-  console.log("Creating manager account...");
-  const hashedPassword = await bcrypt.hash(DEMO_PASSWORD, 10);
-  await prisma.user.create({
+/**
+ * Creates one organization end to end: the org itself, its manager, its
+ * engineers, and its bugs (auto-assigning most of them through the real
+ * engine). Returns nothing — everything it creates is scoped to this org
+ * alone, which is the whole point of seeding more than one.
+ */
+async function seedOrganization(
+  orgName: string,
+  hashedPassword: string,
+  manager: { name: string; email: string },
+  engineers: EngineerSeed[],
+  bugs: BugSeed[],
+) {
+  const organization = await prisma.organization.create({ data: { name: orgName } });
+
+  const managerUser = await prisma.user.create({
     data: {
-      name: MANAGER.name,
-      email: MANAGER.email,
+      organizationId: organization.id,
+      name: manager.name,
+      email: manager.email,
       password: hashedPassword,
-      role: MANAGER.role,
+      role: "manager",
       expertise: [],
     },
   });
 
-  console.log("Creating engineers...");
-  for (const engineer of ENGINEERS) {
+  for (const engineer of engineers) {
     await prisma.user.create({
       data: {
+        organizationId: organization.id,
         name: engineer.name,
         email: engineer.email,
         password: hashedPassword,
@@ -114,12 +154,13 @@ async function main() {
     });
   }
 
-  console.log("Creating bugs...");
   const createdBugIds: string[] = [];
-  for (const bug of BUGS) {
+  for (const bug of bugs) {
     const severity = calculateSeverity(bug.title, bug.description, bug.module, bug.environment);
     const created = await prisma.bugReport.create({
       data: {
+        organizationId: organization.id,
+        reporterId: managerUser.id,
         title: bug.title,
         description: bug.description,
         stepsToReproduce: bug.stepsToReproduce ?? null,
@@ -133,28 +174,45 @@ async function main() {
     createdBugIds.push(created.id);
   }
 
-  console.log("Assigning some bugs through the real assignment engine...");
-  // Assign the first five; leave the rest open so the triage queue has work to show.
-  for (const bugId of createdBugIds.slice(0, 5)) {
+  // Auto-assign roughly 60% of them; leave the rest open so the triage queue has work to show.
+  const assignCount = Math.floor(createdBugIds.length * 0.6);
+  const toAssign = createdBugIds.slice(0, assignCount);
+  for (const bugId of toAssign) {
     try {
-      await assignBug(bugId);
+      await assignBug(bugId, organization.id);
     } catch (err) {
-      console.warn(`Could not auto-assign bug ${bugId}:`, err instanceof Error ? err.message : err);
+      console.warn(`  Could not auto-assign bug ${bugId}:`, err instanceof Error ? err.message : err);
     }
   }
 
-  // Mark one assigned bug as resolved and one as in_progress, so status filters have data too.
-  const [firstBugId, secondBugId] = createdBugIds;
-  if (firstBugId) {
-    await prisma.bugReport.update({ where: { id: firstBugId }, data: { status: "in_progress" } });
+  // Move a couple of the *assigned* bugs further along, so status filters have data too.
+  const [firstAssignedId, secondAssignedId] = toAssign;
+  if (firstAssignedId) {
+    await prisma.bugReport.update({ where: { id: firstAssignedId }, data: { status: "in_progress" } });
   }
-  if (secondBugId) {
-    await prisma.bugReport.update({ where: { id: secondBugId }, data: { status: "resolved" } });
+  if (secondAssignedId) {
+    await prisma.bugReport.update({ where: { id: secondAssignedId }, data: { status: "resolved" } });
   }
 
-  console.log(`Done. Seeded 1 manager, ${ENGINEERS.length} engineers, and ${BUGS.length} bugs.`);
-  console.log(`Every seeded account shares the password: ${DEMO_PASSWORD}`);
-  console.log(`Log in as the manager (${MANAGER.email}) to dispatch bugs and register new engineers.`);
+  console.log(`  ${orgName}: 1 manager, ${engineers.length} engineer(s), ${bugs.length} bug(s)`);
+}
+
+async function main() {
+  console.log("Clearing existing data...");
+  await prisma.invite.deleteMany();
+  await prisma.assignment.deleteMany();
+  await prisma.bugReport.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.organization.deleteMany();
+
+  const hashedPassword = await bcrypt.hash(DEMO_PASSWORD, 10);
+
+  console.log("Seeding organizations...");
+  await seedOrganization("FixFlow Labs", hashedPassword, FIXFLOW_LABS_MANAGER, FIXFLOW_LABS_ENGINEERS, FIXFLOW_LABS_BUGS);
+  await seedOrganization("Nimbus Robotics", hashedPassword, NIMBUS_MANAGER, NIMBUS_ENGINEERS, NIMBUS_BUGS);
+
+  console.log(`\nDone. Every seeded account shares the password: ${DEMO_PASSWORD}`);
+  console.log(`Log in as ${FIXFLOW_LABS_MANAGER.email} or ${NIMBUS_MANAGER.email} — each only sees their own organization's data.`);
 }
 
 main()

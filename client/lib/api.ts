@@ -9,6 +9,9 @@ import type {
   BugStatus,
   AuthUser,
   LoginResponse,
+  RegisterInput,
+  Invite,
+  CreateInviteInput,
 } from "./types"
 
 import axios, { AxiosRequestConfig } from "axios"
@@ -176,4 +179,40 @@ export async function login(
 export async function getCurrentUser(): Promise<AuthUser | null> {
   const res = await request<AuthUser>("/auth/me", { cache: "no-store" })
   return res.data ?? null
+}
+
+export async function register(input: RegisterInput): Promise<ApiResponse<LoginResponse>> {
+  return request<LoginResponse>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+// ─── Invites ──────────────────────────────────────────────────────────────────
+
+export async function listInvites(): Promise<Invite[]> {
+  const res = await request<Invite[]>("/invites", { cache: "no-store" })
+  return res.data ?? []
+}
+
+export async function createInvite(input: CreateInviteInput): Promise<ApiResponse<Invite>> {
+  return request<Invite>("/invites", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+export async function revokeInvite(inviteId: string): Promise<ApiResponse<{ message: string }>> {
+  return request<{ message: string }>(`/invites/${inviteId}`, { method: "DELETE" })
+}
+
+export async function acceptInvite(
+  token: string,
+  name: string,
+  password: string
+): Promise<ApiResponse<LoginResponse>> {
+  return request<LoginResponse>("/invites/accept", {
+    method: "POST",
+    body: JSON.stringify({ token, name, password }),
+  })
 }

@@ -20,23 +20,36 @@ export function useAuth(): AuthContextValue {
   return ctx
 }
 
+// /login and /register redirect straight to the app if you're already
+// signed in. /accept-invite never does — someone might deliberately want to
+// accept a different invite while a stale session is still around.
+const AUTH_PAGES = ["/login", "/register"]
+const OPEN_PAGES = ["/accept-invite"]
+
 /**
- * Gates every page except /login behind a valid session. Checks for a
- * stored token on mount and confirms it's still good by asking the API who
+ * Gates every page except the ones above behind a valid session. Checks for
+ * a stored token on mount and confirms it's still good by asking the API who
  * it belongs to (GET /auth/me) — a token that's merely present but expired
  * or revoked shouldn't be treated as "logged in".
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const isLoginPage = pathname === "/login"
+  const isAuthPage = AUTH_PAGES.includes(pathname)
+  const isOpenPage = OPEN_PAGES.includes(pathname)
+  const isPublicPage = isAuthPage || isOpenPage
 
   const [user, setUser] = useState<AuthUser | null>(null)
   const [checked, setChecked] = useState(false)
 
   useEffect(() => {
-    if (isLoginPage) {
-      // Already logged in and landed on /login anyway (e.g. typed the URL
+    if (isOpenPage) {
+      setChecked(true)
+      return
+    }
+
+    if (isAuthPage) {
+      // Already logged in and landed here anyway (e.g. typed the URL
       // directly) — send them straight to the app instead of showing the form.
       if (getToken()) {
         router.replace("/")
@@ -60,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(current)
       setChecked(true)
     })
-  }, [isLoginPage, router])
+  }, [isAuthPage, isOpenPage, router])
 
   function logout() {
     clearToken()
@@ -68,7 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.replace("/login")
   }
 
-  if (isLoginPage) {
+  if (isPublicPage) {
     return <AuthContext.Provider value={{ user, logout }}>{children}</AuthContext.Provider>
   }
 

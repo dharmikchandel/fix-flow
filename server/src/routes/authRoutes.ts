@@ -1,22 +1,14 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
-import { login, me } from "../controllers/authController.js";
+import { login, register, me } from "../controllers/authController.js";
 import { validate } from "../utils/validate.js";
-import { loginSchema } from "../models/validators.js";
+import { loginSchema, registerSchema } from "../models/validators.js";
 import { requireAuth } from "../middleware/auth.js";
+import { authLimiter } from "../middleware/rateLimiters.js";
 
 const router = Router();
 
-// Slows down credential-guessing without needing any extra infrastructure.
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: "Too many login attempts. Please try again later." },
-});
-
-router.post("/login", loginLimiter, validate(loginSchema), login);
+router.post("/login", authLimiter, validate(loginSchema), login);
+router.post("/register", authLimiter, validate(registerSchema), register);
 router.get("/me", requireAuth, me);
 
 export default router;

@@ -8,7 +8,7 @@ import type { CreateBugInput, ApiResponse, BugSubmissionResponse } from "../mode
  */
 export async function submitBug(req: Request, res: Response): Promise<void> {
   const input: CreateBugInput = req.body;
-  const result = await bugService.submitBug(input);
+  const result = await bugService.submitBug(input, req.user!.organizationId, req.user!.id);
 
   const response: ApiResponse<BugSubmissionResponse> = {
     success: true,
@@ -23,7 +23,7 @@ export async function submitBug(req: Request, res: Response): Promise<void> {
  */
 export async function listBugs(req: Request, res: Response): Promise<void> {
   const status = req.query["status"] as string | undefined;
-  const bugs = await bugService.listBugs(status);
+  const bugs = await bugService.listBugs(status, req.user!.organizationId);
 
   res.json({ success: true, data: bugs });
 }
@@ -32,7 +32,7 @@ export async function listBugs(req: Request, res: Response): Promise<void> {
  * GET /bugs/:id — Get a single bug by ID
  */
 export async function getBug(req: Request, res: Response): Promise<void> {
-  const bug = await bugService.getBugById(String(req.params["id"]));
+  const bug = await bugService.getBugById(String(req.params["id"]), req.user!.organizationId);
 
   if (!bug) {
     throw AppError.notFound("Bug not found");
@@ -46,6 +46,6 @@ export async function getBug(req: Request, res: Response): Promise<void> {
  */
 export async function updateStatus(req: Request, res: Response): Promise<void> {
   const { status } = req.body;
-  const bug = await bugService.updateBugStatus(String(req.params["id"]), status);
+  const bug = await bugService.updateBugStatus(String(req.params["id"]), status, req.user!.organizationId);
   res.json({ success: true, data: bug });
 }

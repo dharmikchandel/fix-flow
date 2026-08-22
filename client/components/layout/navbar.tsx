@@ -1,6 +1,6 @@
 "use client"
 
-import { Search, Bell, Activity, LogOut } from "lucide-react"
+import { Search, Bell, Building2, LogOut } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-provider"
 
 export function Navbar() {
@@ -25,11 +25,13 @@ export function Navbar() {
       </div>
       
       <div className="flex items-center gap-4">
-        {/* Environment Indicator */}
-        <div className="hidden sm:flex items-center gap-2 rounded-full border border-[var(--info-soft)] bg-[var(--bg-1)] px-3 py-1 font-mono text-xs text-[var(--info)]">
-          <Activity className="h-3 w-3" />
-          <span>backend: connected</span>
-        </div>
+        {/* Current workspace */}
+        {user && (
+          <div className="hidden sm:flex items-center gap-2 rounded-full border border-[var(--info-soft)] bg-[var(--bg-1)] px-3 py-1 font-mono text-xs text-[var(--info)]">
+            <Building2 className="h-3 w-3" />
+            <span>{user.organizationName}</span>
+          </div>
+        )}
         
         {/* Notifications */}
         <button className="relative rounded-full p-2 text-[var(--text-3)] hover:bg-[var(--bg-2)] hover:text-[var(--text-1)] transition-colors">

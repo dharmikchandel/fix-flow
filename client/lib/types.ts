@@ -109,9 +109,38 @@ export interface AuthUser {
   name: string
   email: string
   role: string
+  organizationId: string
+  organizationName: string
 }
 
 export interface LoginResponse {
   token: string
   user: AuthUser
+}
+
+export interface RegisterInput {
+  organizationName: string
+  name: string
+  email: string
+  password: string
+}
+
+// ─── Invites ──────────────────────────────────────────────────────────────────
+
+export interface Invite {
+  id: string
+  email: string
+  role: string
+  expertise: string[]
+  maxCapacity: number
+  token: string
+  expiresAt: string
+  createdAt: string
+}
+
+export interface CreateInviteInput {
+  email: string
+  role?: string
+  expertise?: string[]
+  maxCapacity?: number
 }

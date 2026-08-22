@@ -11,8 +11,11 @@ import {
   Loader2, X, UserCheck, RotateCcw
 } from "lucide-react"
 import { getBug, assignBug, unassignBug, updateBugStatus } from "@/lib/api"
+import { useAuth } from "@/components/auth/auth-provider"
 import type { Bug, BugStatus } from "@/lib/types"
 import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
+
+const MANAGEMENT_ROLES = ["lead", "manager"]
 
 function Toast({
   message, type, onDismiss
@@ -34,6 +37,9 @@ function Toast({
 export default function BugDetailPage({ params, }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const { id } = use(params)
+  const { user } = useAuth()
+  const isManager = user ? MANAGEMENT_ROLES.includes(user.role) : false
+
   const [bug, setBug] = useState<Bug | null>(null)
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
@@ -160,34 +166,36 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
 
             {/* Action bar */}
             <div className="flex flex-wrap items-center gap-2 bg-[var(--bg-1)] border border-[var(--border-1)] rounded-[var(--radius-md)] p-2 shrink-0">
-              {!bug.assignment ? (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={handleAssign}
-                  disabled={isPending}
-                >
-                  {isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                  ) : (
-                    <UserCheck className="h-3 w-3 mr-1" />
-                  )}
-                  Auto-Assign
-                </Button>
-              ) : (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleUnassign}
-                  disabled={isPending}
-                >
-                  {isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                  ) : (
-                    <RotateCcw className="h-3 w-3 mr-1" />
-                  )}
-                  Unassign
-                </Button>
+              {isManager && (
+                !bug.assignment ? (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleAssign}
+                    disabled={isPending}
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <UserCheck className="h-3 w-3 mr-1" />
+                    )}
+                    Auto-Assign
+                  </Button>
+                ) : (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleUnassign}
+                    disabled={isPending}
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <RotateCcw className="h-3 w-3 mr-1" />
+                    )}
+                    Unassign
+                  </Button>
+                )
               )}
 
               {/* Status dropdown */}
