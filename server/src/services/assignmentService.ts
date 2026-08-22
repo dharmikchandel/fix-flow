@@ -1,108 +1,203 @@
 import prisma from "../config/database.js";
-import type { AssignmentResult, EngineerProfile } from "../models/types.js";
+import { AppError } from "../utils/AppError.js";
+import type { AssignmentResult } from "../models/types.js";
+
+const CLOSED_STATUSES = new Set(["resolved", "closed"]);
+const MAX_CLAIM_ATTEMPTS = 3;
+
+export interface AssignmentCandidate {
+  id: string;
+  name: string;
+  expertise: string[];
+  workload: number;
+  maxCapacity: number;
+  available: boolean;
+}
+
+interface AssigneeSelection {
+  assignee: AssignmentCandidate;
+  reason: string;
+}
 
 /**
- * Assignment Service
+ * Pure selection logic — no database access, so this is cheap to unit test
+ * directly instead of only through the full assignment flow.
  *
- * Implements the assignment logic from the PRD:
- *   1. Filter engineers by expertise matching the bug's module
- *   2. Filter by availability and capacity
- *   3. Sort by current workload (ascending)
- *   4. Assign to the engineer with the lowest workload
+ * Prefers an available, under-capacity engineer whose expertise matches the
+ * bug's module, picking the one with the lowest current workload. Falls back
+ * to any available, under-capacity engineer (regardless of expertise) if no
+ * specialist is free.
  */
-export async function assignBug(bugId: string): Promise<AssignmentResult> {
-  // 1. Fetch the bug to get its module
+export function selectAssignee(
+  engineers: AssignmentCandidate[],
+  module: string,
+): AssigneeSelection {
+  const eligible = engineers
+    .filter((e) => e.available && e.workload < e.maxCapacity)
+    .sort((a, b) => a.workload - b.workload);
+
+  const moduleKey = module.toLowerCase();
+  const specialist = eligible.find((e) => e.expertise.includes(moduleKey));
+
+  if (specialist) {
+    return {
+      assignee: specialist,
+      reason: `${specialist.name} is a ${module} expert with the lowest workload (${specialist.workload}/${specialist.maxCapacity})`,
+    };
+  }
+
+  const fallback = eligible[0];
+  if (!fallback) {
+    throw AppError.badRequest("No available engineers with capacity to take this bug");
+  }
+
+  return {
+    assignee: fallback,
+    reason: `No ${module} specialist available. ${fallback.name} assigned as fallback with lowest workload (${fallback.workload}/${fallback.maxCapacity})`,
+  };
+}
+
+/** Internal signal: someone else claimed the engineer's last capacity slot between read and write. */
+class WorkloadRaceError extends Error {}
+
+/**
+ * Atomically claim a bug for an engineer: increments workload only if it
+ * still matches what we read a moment ago (optimistic concurrency), then
+ * creates the assignment and marks the bug assigned — all in one transaction.
+ *
+ * Throws `WorkloadRaceError` if the engineer's workload changed underneath
+ * us (caller should re-select and retry), or `AppError.conflict` if the bug
+ * itself was assigned to someone else in the meantime.
+ */
+async function claimAssignment(
+  bugId: string,
+  assignee: AssignmentCandidate,
+  reason: string,
+): Promise<void> {
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claim = await tx.user.updateMany({
+        where: { id: assignee.id, workload: assignee.workload },
+        data: { workload: { increment: 1 } },
+      });
+      if (claim.count === 0) {
+        throw new WorkloadRaceError();
+      }
+
+      await tx.assignment.create({ data: { bugId, userId: assignee.id, reason } });
+      await tx.bugReport.update({ where: { id: bugId }, data: { status: "assigned" } });
+    });
+  } catch (err: any) {
+    if (err instanceof WorkloadRaceError) throw err;
+    // Unique constraint on Assignment.bugId — another request assigned this bug first.
+    if (err?.code === "P2002") {
+      throw AppError.conflict(`Bug "${bugId}" was just assigned by another request`);
+    }
+    throw err;
+  }
+}
+
+async function loadAssignableBug(bugId: string) {
   const bug = await prisma.bugReport.findUnique({
     where: { id: bugId },
     include: { assignment: true },
   });
 
   if (!bug) {
-    throw new Error(`Bug with ID "${bugId}" not found`);
+    throw AppError.notFound(`Bug with ID "${bugId}" not found`);
   }
-
   if (bug.assignment) {
-    throw new Error(`Bug "${bugId}" is already assigned to user "${bug.assignment.userId}"`);
+    throw AppError.conflict(`Bug "${bugId}" is already assigned to user "${bug.assignment.userId}"`);
+  }
+  if (CLOSED_STATUSES.has(bug.status)) {
+    throw AppError.badRequest(`Cannot assign a bug that is already "${bug.status}"`);
   }
 
-  // 2. Find eligible engineers: matching expertise, available, under capacity
-  const eligibleEngineers = await prisma.user.findMany({
-    where: {
-      role: "engineer",
-      available: true,
-      expertise: { has: bug.module.toLowerCase() },
-      workload: { lt: prisma.user.fields.maxCapacity } as any, // will use raw comparison below
-    },
-    orderBy: { workload: "asc" },
-  });
+  return bug;
+}
 
-  // Prisma doesn't support field-to-field comparisons in `where`, so filter in-app
-  const candidates = eligibleEngineers.filter((e: typeof eligibleEngineers[number]) => e.workload < e.maxCapacity);
+/**
+ * Assign a bug to the best-fit engineer, per the rules in `selectAssignee`.
+ * Retries a handful of times if two assignments race for the same engineer's
+ * last capacity slot.
+ */
+export async function assignBug(bugId: string): Promise<AssignmentResult> {
+  const bug = await loadAssignableBug(bugId);
 
-  // 3. If no specialist is available, fall back to any available engineer under capacity
-  let assignee: EngineerProfile | null = null;
-  let reason = "";
+  for (let attempt = 1; attempt <= MAX_CLAIM_ATTEMPTS; attempt++) {
+    const engineers = await prisma.user.findMany({ where: { role: "engineer" } });
+    const { assignee, reason } = selectAssignee(engineers, bug.module);
 
-  if (candidates.length > 0) {
-    const best = candidates[0]!;
-    assignee = toProfile(best);
-    reason = `${best.name} is a ${bug.module} expert with the lowest workload (${best.workload}/${best.maxCapacity})`;
-  } else {
-    // Fallback: any available engineer under capacity, sorted by workload
-    const fallbackEngineers = await prisma.user.findMany({
-      where: {
-        role: "engineer",
-        available: true,
-      },
-      orderBy: { workload: "asc" },
-    });
+    try {
+      await claimAssignment(bugId, assignee, reason);
+      return { assignedTo: assignee.id, engineerName: assignee.name, reason };
+    } catch (err) {
+      if (err instanceof WorkloadRaceError && attempt < MAX_CLAIM_ATTEMPTS) {
+        continue; // workloads moved under us — re-read and re-select
+      }
+      if (err instanceof WorkloadRaceError) {
+        throw AppError.conflict("Could not assign this bug — engineer workloads kept changing. Please try again.");
+      }
+      throw err;
+    }
+  }
 
-    const fallback = fallbackEngineers.find((e: typeof fallbackEngineers[number]) => e.workload < e.maxCapacity);
+  // Unreachable — the loop above always returns or throws — but keeps TypeScript happy.
+  throw AppError.conflict("Could not assign this bug. Please try again.");
+}
 
-    if (!fallback) {
-      throw new Error("No available engineers with capacity to take this bug");
+/**
+ * Assign a bug to a specific engineer chosen by a triage lead, instead of
+ * letting the matching algorithm pick. Still enforces availability and
+ * capacity — a lead can choose *who*, not bypass *whether they have room*.
+ */
+export async function assignBugToEngineer(bugId: string, engineerId: string): Promise<AssignmentResult> {
+  const bug = await loadAssignableBug(bugId);
+
+  const engineer = await prisma.user.findUnique({ where: { id: engineerId } });
+  if (!engineer) {
+    throw AppError.notFound(`Engineer with ID "${engineerId}" not found`);
+  }
+  if (!engineer.available) {
+    throw AppError.badRequest(`${engineer.name} is marked unavailable`);
+  }
+  if (engineer.workload >= engineer.maxCapacity) {
+    throw AppError.badRequest(`${engineer.name} is already at capacity (${engineer.workload}/${engineer.maxCapacity})`);
+  }
+
+  const reason = `Manually assigned to ${engineer.name} by a triage lead`;
+
+  for (let attempt = 1; attempt <= MAX_CLAIM_ATTEMPTS; attempt++) {
+    const fresh = attempt === 1 ? engineer : await prisma.user.findUniqueOrThrow({ where: { id: engineerId } });
+    if (fresh.workload >= fresh.maxCapacity) {
+      throw AppError.badRequest(`${fresh.name} reached capacity (${fresh.workload}/${fresh.maxCapacity}) before the assignment could be made`);
     }
 
-    assignee = toProfile(fallback);
-    reason = `No ${bug.module} specialist available. ${fallback.name} assigned as fallback with lowest workload (${fallback.workload}/${fallback.maxCapacity})`;
+    try {
+      await claimAssignment(bugId, fresh, reason);
+      return { assignedTo: fresh.id, engineerName: fresh.name, reason };
+    } catch (err) {
+      if (err instanceof WorkloadRaceError && attempt < MAX_CLAIM_ATTEMPTS) {
+        continue;
+      }
+      if (err instanceof WorkloadRaceError) {
+        throw AppError.conflict("Could not assign this bug — the engineer's workload kept changing. Please try again.");
+      }
+      throw err;
+    }
   }
 
-  // 4. Create assignment and increment engineer workload (transaction)
-  await prisma.$transaction([
-    prisma.assignment.create({
-      data: {
-        bugId,
-        userId: assignee.id,
-        reason,
-      },
-    }),
-    prisma.user.update({
-      where: { id: assignee.id },
-      data: { workload: { increment: 1 } },
-    }),
-    prisma.bugReport.update({
-      where: { id: bugId },
-      data: { status: "assigned" },
-    }),
-  ]);
-
-  return {
-    assignedTo: assignee.id,
-    engineerName: assignee.name,
-    reason,
-  };
+  throw AppError.conflict("Could not assign this bug. Please try again.");
 }
 
 /**
  * Unassign a bug and decrement the engineer's workload.
  */
 export async function unassignBug(bugId: string): Promise<void> {
-  const assignment = await prisma.assignment.findUnique({
-    where: { bugId },
-  });
+  const assignment = await prisma.assignment.findUnique({ where: { bugId } });
 
   if (!assignment) {
-    throw new Error(`No assignment found for bug "${bugId}"`);
+    throw AppError.notFound(`No assignment found for bug "${bugId}"`);
   }
 
   await prisma.$transaction([
@@ -116,24 +211,4 @@ export async function unassignBug(bugId: string): Promise<void> {
       data: { status: "open" },
     }),
   ]);
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function toProfile(user: {
-  id: string;
-  name: string;
-  expertise: string[];
-  workload: number;
-  maxCapacity: number;
-  available: boolean;
-}): EngineerProfile {
-  return {
-    id: user.id,
-    name: user.name,
-    expertise: user.expertise,
-    workload: user.workload,
-    maxCapacity: user.maxCapacity,
-    available: user.available,
-  };
 }

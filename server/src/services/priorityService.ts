@@ -1,18 +1,34 @@
 import prisma from "../config/database.js";
 import type { PriorityItem } from "../models/types.js";
 
+/** Bug age is normalized against this cap (30 days) before entering the score. */
+const MAX_AGE_HOURS = 720;
+
+/**
+ * Pure scoring formula — no database access, so this is cheap to unit test
+ * directly instead of only through the full queue-generation flow.
+ *
+ *   priorityScore = (severityScore * 0.6) + (normalizedAge * 0.3) + (unassignedBonus * 0.1)
+ *
+ * `ageHours` is normalized to a 0–100 scale, capped at 720 hours (30 days).
+ * Unassigned bugs get a full 100-point boost on that term, nudging them
+ * ahead of assigned bugs of similar severity and age.
+ */
+export function computePriorityScore(
+  severityScore: number,
+  ageHours: number,
+  isAssigned: boolean,
+): number {
+  const normalizedAge = Math.min(ageHours / MAX_AGE_HOURS, 1) * 100;
+  const unassignedBonus = isAssigned ? 0 : 100;
+  return Math.round(severityScore * 0.6 + normalizedAge * 0.3 + unassignedBonus * 0.1);
+}
+
 /**
  * Priority Queue Service
  *
- * Generates a prioritized list of open/assigned bugs based on:
- *   1. Severity score (higher = more urgent)
- *   2. Age in hours (older = more urgent)
- *   3. Assignment status (unassigned bugs get a small boost)
- *
- * Priority score formula:
- *   priorityScore = (severityScore * 0.6) + (ageScore * 0.3) + (unassignedBonus * 0.1)
- *
- * The final list is ordered by priorityScore descending, with a rank assigned.
+ * Generates a prioritized list of open/assigned bugs, ranked by
+ * `computePriorityScore`, most urgent first.
  */
 export async function generatePriorityQueue(): Promise<PriorityItem[]> {
   const bugs = await prisma.bugReport.findMany({
@@ -29,21 +45,10 @@ export async function generatePriorityQueue(): Promise<PriorityItem[]> {
 
   const now = Date.now();
 
-  const scored: PriorityItem[] = bugs.map((bug: typeof bugs[number]) => {
-    // Age in hours since creation
+  const scored: PriorityItem[] = bugs.map((bug: (typeof bugs)[number]) => {
     const ageMs = now - bug.createdAt.getTime();
     const ageHours = Math.round((ageMs / (1000 * 60 * 60)) * 10) / 10;
-
-    // Normalize age to a 0–100 scale (cap at 720 hours = 30 days)
-    const normalizedAge = Math.min(ageHours / 720, 1) * 100;
-
-    // Unassigned bonus
-    const unassignedBonus = bug.assignment ? 0 : 100;
-
-    // Composite priority score
-    const priorityScore = Math.round(
-      bug.severityScore * 0.6 + normalizedAge * 0.3 + unassignedBonus * 0.1,
-    );
+    const priorityScore = computePriorityScore(bug.severityScore, ageHours, Boolean(bug.assignment));
 
     return {
       bugId: bug.id,
@@ -52,16 +57,13 @@ export async function generatePriorityQueue(): Promise<PriorityItem[]> {
       severityLabel: bug.severityLabel,
       ageHours,
       priorityScore,
-      priority: 0, // will be set after sorting
+      priority: 0, // set after sorting
       assignedTo: bug.assignment?.userId ?? null,
       status: bug.status,
     };
   });
 
-  // Sort by priority score descending
   scored.sort((a, b) => b.priorityScore - a.priorityScore);
-
-  // Assign rank
   scored.forEach((item, index) => {
     item.priority = index + 1;
   });

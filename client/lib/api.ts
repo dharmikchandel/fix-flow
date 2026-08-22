@@ -11,7 +11,7 @@ import type {
 
 import axios, { AxiosRequestConfig } from "axios"
 
-const BASE = process.env.NEXT_PUBLIC_API_URL
+const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api"
 
 const client = axios.create({
   baseURL: BASE,
@@ -20,19 +20,19 @@ const client = axios.create({
 
 async function request<T>(
   path: string,
-  options?: AxiosRequestConfig & { cache?: string; body?: any }
+  options?: AxiosRequestConfig & { cache?: string; body?: string }
 ): Promise<ApiResponse<T>> {
   try {
-    const dataToSend = options?.body ? (typeof options.body === 'string' ? JSON.parse(options.body) : options.body) : options?.data;
+    const dataToSend = options?.body ? JSON.parse(options.body) : options?.data;
     const res = await client.request<ApiResponse<T>>({
       url: path,
       method: options?.method || "GET",
       data: dataToSend,
       ...options,
     })
-    
+
     return res.data
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (axios.isAxiosError(error)) {
       console.error(`[API Axios Error] ${path}:`, error.response?.data || error.message)
       return (error.response?.data as ApiResponse<T>) || { success: false, error: error.message }
@@ -84,6 +84,16 @@ export async function assignBug(
   return request<AssignmentResult>("/assign", {
     method: "POST",
     body: JSON.stringify({ bugId }),
+  })
+}
+
+export async function assignBugToEngineer(
+  bugId: string,
+  engineerId: string
+): Promise<ApiResponse<AssignmentResult>> {
+  return request<AssignmentResult>("/assign/manual", {
+    method: "POST",
+    body: JSON.stringify({ bugId, engineerId }),
   })
 }
 

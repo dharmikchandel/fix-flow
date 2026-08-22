@@ -10,32 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Search, Filter, X, Plus, Loader2, AlertCircle } from "lucide-react"
 import { submitBug, listBugs } from "@/lib/api"
 import type { Bug, CreateBugInput, BugStatus } from "@/lib/types"
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function severityVariant(label: string) {
-  const map: Record<string, string> = {
-    Critical: "critical", High: "high", Medium: "medium", Low: "low",
-  }
-  return (map[label] ?? "default") as any
-}
-
-function statusVariant(status: string) {
-  const map: Record<string, string> = {
-    open: "default", assigned: "assigned", in_progress: "inProgress",
-    resolved: "resolved", closed: "default",
-  }
-  return (map[status] ?? "default") as any
-}
-
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
-}
+import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
 
 // ─── Report Bug Modal ─────────────────────────────────────────────────────────
 

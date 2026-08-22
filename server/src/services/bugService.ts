@@ -1,6 +1,7 @@
 import prisma from "../config/database.js";
 import { calculateSeverity } from "./severityService.js";
 import { findDuplicates } from "./duplicateService.js";
+import { AppError } from "../utils/AppError.js";
 import type { CreateBugInput, BugSubmissionResponse } from "../models/types.js";
 
 /**
@@ -41,13 +42,24 @@ export async function submitBug(input: CreateBugInput): Promise<BugSubmissionRes
   };
 }
 
+/** Shared include: pulls the assignee's profile alongside the assignment row. */
+const WITH_ASSIGNEE = {
+  assignment: {
+    include: {
+      user: {
+        select: { id: true, name: true, email: true, role: true },
+      },
+    },
+  },
+} as const;
+
 /**
  * Retrieve a single bug by ID.
  */
 export async function getBugById(bugId: string) {
   return prisma.bugReport.findUnique({
     where: { id: bugId },
-    include: { assignment: true },
+    include: WITH_ASSIGNEE,
   });
 }
 
@@ -57,7 +69,7 @@ export async function getBugById(bugId: string) {
 export async function listBugs(status?: string) {
   return prisma.bugReport.findMany({
     where: status ? { status } : undefined,
-    include: { assignment: true },
+    include: WITH_ASSIGNEE,
     orderBy: { createdAt: "desc" },
   });
 }
@@ -66,6 +78,11 @@ export async function listBugs(status?: string) {
  * Update bug status (e.g., open → in_progress → resolved → closed).
  */
 export async function updateBugStatus(bugId: string, status: string) {
+  const bug = await prisma.bugReport.findUnique({ where: { id: bugId } });
+  if (!bug) {
+    throw AppError.notFound(`Bug with ID "${bugId}" not found`);
+  }
+
   return prisma.bugReport.update({
     where: { id: bugId },
     data: { status },

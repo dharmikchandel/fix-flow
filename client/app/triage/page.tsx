@@ -10,21 +10,7 @@ import {
 } from "lucide-react"
 import { getPriorityQueue, assignBug } from "@/lib/api"
 import type { PriorityItem } from "@/lib/types"
-
-function severityVariant(label: string) {
-  const map: Record<string, string> = {
-    Critical: "critical", High: "high", Medium: "medium", Low: "low",
-  }
-  return (map[label] ?? "default") as any
-}
-
-function statusVariant(status: string) {
-  const map: Record<string, string> = {
-    open: "default", assigned: "assigned", in_progress: "inProgress",
-    resolved: "resolved", closed: "default",
-  }
-  return (map[status] ?? "default") as any
-}
+import { severityVariant, statusVariant } from "@/lib/badge-helpers"
 
 function Toast({ message, type, onDismiss }: {
   message: string; type: "success" | "error"; onDismiss: () => void

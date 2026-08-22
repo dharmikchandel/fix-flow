@@ -1,5 +1,6 @@
 import prisma from "../config/database.js";
 import bcrypt from "bcrypt";
+import { AppError } from "../utils/AppError.js";
 import type { CreateUserInput } from "../models/types.js";
 
 const SALT_ROUNDS = 10;
@@ -74,6 +75,11 @@ export async function getUserById(userId: string) {
 }
 
 export async function toggleAvailability(userId: string, available: boolean) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw AppError.notFound(`User with ID "${userId}" not found`);
+  }
+
   return prisma.user.update({
     where: { id: userId },
     data: { available },

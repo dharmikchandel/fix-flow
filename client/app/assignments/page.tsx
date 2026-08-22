@@ -8,7 +8,7 @@ import {
   Users, CheckCircle2, XCircle, AlertCircle,
   Loader2, X, UserCheck, RefreshCw
 } from "lucide-react"
-import { listUsers, listBugs, assignBug, toggleAvailability } from "@/lib/api"
+import { listUsers, listBugs, assignBugToEngineer, toggleAvailability } from "@/lib/api"
 import type { Engineer, Bug } from "@/lib/types"
 
 function Toast({ message, type, onDismiss }: {
@@ -50,12 +50,12 @@ function AssignModal({
   if (!open || !engineer) return null
 
   function handleAssign() {
-    if (!selectedBugId) {
+    if (!selectedBugId || !engineer) {
       setError("Select a bug to assign.")
       return
     }
     startTransition(async () => {
-      const res = await assignBug(selectedBugId)
+      const res = await assignBugToEngineer(selectedBugId, engineer.id)
       if (res.success && res.data) {
         onAssigned(`Bug assigned to ${res.data.engineerName}.`)
         onClose()

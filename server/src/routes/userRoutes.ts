@@ -6,13 +6,13 @@ import {
   toggleAvailability,
 } from "../controllers/userController.js";
 import { validate } from "../utils/validate.js";
-import { createUserSchema } from "../models/validators.js";
+import { createUserSchema, toggleAvailabilitySchema } from "../models/validators.js";
 
 const router = Router();
 
 router.post("/", validate(createUserSchema), createUser);
 router.get("/", listUsers);
 router.get("/:id", getUser);
-router.patch("/:id/availability", toggleAvailability);
+router.patch("/:id/availability", validate(toggleAvailabilitySchema), toggleAvailability);
 
 export default router;

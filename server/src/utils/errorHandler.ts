@@ -1,9 +1,17 @@
 import type { Request, Response, NextFunction } from "express";
 import type { ApiResponse } from "../models/types.js";
+import { AppError } from "./AppError.js";
 
 /**
- * Global error handler middleware.
- * Catches any unhandled errors and returns a consistent JSON response.
+ * Global error handler middleware. Every route reaches this through
+ * `asyncHandler` or Express's own sync-error catching, so this is the one
+ * place that decides status codes and how much error detail leaves the server.
+ *
+ * `AppError` instances carry a known, safe-to-show message and status code
+ * (not found, validation, conflict, ...). Anything else is an unexpected
+ * failure — its message is logged but never sent to the client, in any
+ * environment, since it may contain internal details (stack frames, raw
+ * database errors, file paths).
  */
 export function errorHandler(
   err: Error,
@@ -12,17 +20,14 @@ export function errorHandler(
   _next: NextFunction,
 ): void {
   console.error("[ERROR]", err.message);
-
-  if (process.env["NODE_ENV"] === "development") {
+  if (process.env["NODE_ENV"] !== "production") {
     console.error(err.stack);
   }
 
-  const response: ApiResponse<null> = {
-    success: false,
-    error: process.env["NODE_ENV"] === "production"
-      ? "Internal server error"
-      : err.message,
-  };
+  const isKnownError = err instanceof AppError;
+  const statusCode = isKnownError ? err.statusCode : 500;
+  const message = isKnownError ? err.message : "Internal server error";
 
-  res.status(500).json(response);
+  const response: ApiResponse<null> = { success: false, error: message };
+  res.status(statusCode).json(response);
 }

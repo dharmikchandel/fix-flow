@@ -3,36 +3,31 @@ import * as assignmentService from "../services/assignmentService.js";
 import type { ApiResponse, AssignmentResult } from "../models/types.js";
 
 /**
- * POST /assign — Assign a bug to the best-fit engineer
+ * POST /assign — Assign a bug to the best-fit engineer, picked automatically
  */
 export async function assignBug(req: Request, res: Response): Promise<void> {
-  try {
-    const { bugId } = req.body;
-    const result = await assignmentService.assignBug(bugId);
+  const { bugId } = req.body;
+  const result = await assignmentService.assignBug(bugId);
 
-    const response: ApiResponse<AssignmentResult> = {
-      success: true,
-      data: result,
-    };
+  const response: ApiResponse<AssignmentResult> = { success: true, data: result };
+  res.status(200).json(response);
+}
 
-    res.status(200).json(response);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Assignment failed";
-    const status = message.includes("not found") ? 404 : 400;
-    res.status(status).json({ success: false, error: message });
-  }
+/**
+ * POST /assign/manual — Assign a bug to a specific engineer chosen by a triage lead
+ */
+export async function assignBugManually(req: Request, res: Response): Promise<void> {
+  const { bugId, engineerId } = req.body;
+  const result = await assignmentService.assignBugToEngineer(bugId, engineerId);
+
+  const response: ApiResponse<AssignmentResult> = { success: true, data: result };
+  res.status(200).json(response);
 }
 
 /**
  * DELETE /assign/:bugId — Unassign a bug
  */
 export async function unassignBug(req: Request, res: Response): Promise<void> {
-  try {
-    await assignmentService.unassignBug(String(req.params["bugId"]));
-    res.json({ success: true, data: { message: "Bug unassigned successfully" } });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unassignment failed";
-    const status = message.includes("not found") ? 404 : 400;
-    res.status(status).json({ success: false, error: message });
-  }
+  await assignmentService.unassignBug(String(req.params["bugId"]));
+  res.json({ success: true, data: { message: "Bug unassigned successfully" } });
 }

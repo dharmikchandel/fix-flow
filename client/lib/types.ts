@@ -13,13 +13,21 @@ export interface DuplicateMatch {
   similarity: number
 }
 
+/** The subset of an engineer's profile the API includes alongside an assignment. */
+export interface AssigneeSummary {
+  id: string
+  name: string
+  email: string
+  role: string
+}
+
 export interface BugAssignment {
   id: string
   bugId: string
   userId: string
   reason: string
   createdAt: string
-  user?: Engineer
+  user?: AssigneeSummary
 }
 
 export interface Bug {

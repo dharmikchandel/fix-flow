@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const BUG_STATUSES = ["open", "assigned", "in_progress", "resolved", "closed"] as const;
+
 export const createBugSchema = z.object({
   title: z
     .string()
@@ -19,6 +21,19 @@ export const createBugSchema = z.object({
 
 export const assignBugSchema = z.object({
   bugId: z.string().min(1, "Bug ID is required"),
+});
+
+export const manualAssignSchema = z.object({
+  bugId: z.string().min(1, "Bug ID is required"),
+  engineerId: z.string().min(1, "Engineer ID is required"),
+});
+
+export const updateBugStatusSchema = z.object({
+  status: z.enum(BUG_STATUSES),
+});
+
+export const toggleAvailabilitySchema = z.object({
+  available: z.boolean(),
 });
 
 export const createUserSchema = z.object({

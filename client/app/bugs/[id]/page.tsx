@@ -12,30 +12,7 @@ import {
 } from "lucide-react"
 import { getBug, assignBug, unassignBug, updateBugStatus } from "@/lib/api"
 import type { Bug, BugStatus } from "@/lib/types"
-
-function severityVariant(label: string) {
-  const map: Record<string, string> = {
-    Critical: "critical", High: "high", Medium: "medium", Low: "low",
-  }
-  return (map[label] ?? "default") as any
-}
-
-function statusVariant(status: string) {
-  const map: Record<string, string> = {
-    open: "default", assigned: "assigned", in_progress: "inProgress",
-    resolved: "resolved", closed: "default",
-  }
-  return (map[status] ?? "default") as any
-}
-
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
-}
+import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
 
 function Toast({
   message, type, onDismiss
@@ -295,7 +272,7 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
                     <div className="flex justify-between items-center">
                       <span className="text-[var(--text-3)]">Assignee</span>
                       <span className="text-[var(--primary-strong)] font-medium">
-                        {bug.assignment.userId.slice(0, 8)}…
+                        {bug.assignment.user?.name ?? `${bug.assignment.userId.slice(0, 8)}…`}
                       </span>
                     </div>
                     <div className="bg-[var(--bg-3)] rounded-[var(--radius-md)] p-3 text-xs text-[var(--text-2)] font-mono leading-relaxed">

@@ -4,36 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { Bug, Users, ListChecks, AlertTriangle } from "lucide-react"
 import type { Bug as BugType, Engineer, PriorityItem } from "@/lib/types"
-
-function severityVariant(label: string) {
-  const map: Record<string, string> = {
-    Critical: "critical",
-    High: "high",
-    Medium: "medium",
-    Low: "low",
-  }
-  return (map[label] ?? "default") as any
-}
-
-function statusVariant(status: string) {
-  const map: Record<string, string> = {
-    open: "default",
-    assigned: "assigned",
-    in_progress: "inProgress",
-    resolved: "resolved",
-    closed: "default",
-  }
-  return (map[status] ?? "default") as any
-}
-
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
-}
+import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
 
 export default async function Dashboard() {
   const [bugs, engineers, queue] = await Promise.all([
