@@ -1,6 +1,11 @@
-import { Search, Bell, Activity } from "lucide-react"
+"use client"
+
+import { Search, Bell, Activity, LogOut } from "lucide-react"
+import { useAuth } from "@/components/auth/auth-provider"
 
 export function Navbar() {
+  const { user, logout } = useAuth()
+
   return (
     <header className="flex h-16 items-center justify-between border-b border-[var(--border-1)] bg-[var(--bg-0)] px-6">
       <div className="flex items-center gap-4 flex-1">
@@ -32,10 +37,25 @@ export function Navbar() {
           <span className="absolute top-1 right-1 flex h-2 w-2 rounded-full bg-[var(--danger)] shadow-[var(--shadow-glow-danger)]"></span>
         </button>
 
-        {/* User Profile Stub */}
-        <div className="h-8 w-8 rounded-full border border-[var(--border-2)] bg-[var(--bg-2)] overflow-hidden">
-          <div className="h-full w-full bg-[linear-gradient(135deg,#2F80FF_0%,#1A2130_100%)] opacity-80" />
-        </div>
+        {/* Current user + logout */}
+        {user && (
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:block text-right">
+              <p className="text-xs font-medium text-[var(--text-1)] leading-tight">{user.name}</p>
+              <p className="text-[10px] text-[var(--text-3)] font-mono leading-tight">{user.role}</p>
+            </div>
+            <div className="h-8 w-8 rounded-full border border-[var(--border-2)] bg-[var(--bg-2)] overflow-hidden flex items-center justify-center text-xs font-semibold text-[var(--primary-strong)]">
+              {user.name.charAt(0).toUpperCase()}
+            </div>
+            <button
+              onClick={logout}
+              title="Log out"
+              className="rounded-full p-2 text-[var(--text-3)] hover:bg-[var(--bg-2)] hover:text-[var(--danger)] transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   )

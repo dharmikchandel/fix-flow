@@ -101,3 +101,17 @@ export interface CreateBugInput {
   module: string
   environment?: string
 }
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string
+  name: string
+  email: string
+  role: string
+}
+
+export interface LoginResponse {
+  token: string
+  user: AuthUser
+}

@@ -23,6 +23,11 @@ const ENGINEERS = [
   { name: "Sam Okafor", email: "sam@fixflow.dev", expertise: ["ui", "docs"], maxCapacity: 3, available: false },
 ];
 
+// A lead/manager account so there's someone who can log in and dispatch bugs
+// or register new engineers on a freshly seeded instance. Not part of the
+// assignable engineer pool (that pool is filtered by role: "engineer").
+const MANAGER = { name: "Jordan Lee", email: "jordan@fixflow.dev", role: "manager" };
+
 const BUGS = [
   {
     title: "Login crashes on production for SSO users",
@@ -82,8 +87,19 @@ async function main() {
   await prisma.bugReport.deleteMany();
   await prisma.user.deleteMany();
 
-  console.log("Creating engineers...");
+  console.log("Creating manager account...");
   const hashedPassword = await bcrypt.hash(DEMO_PASSWORD, 10);
+  await prisma.user.create({
+    data: {
+      name: MANAGER.name,
+      email: MANAGER.email,
+      password: hashedPassword,
+      role: MANAGER.role,
+      expertise: [],
+    },
+  });
+
+  console.log("Creating engineers...");
   for (const engineer of ENGINEERS) {
     await prisma.user.create({
       data: {
@@ -136,8 +152,9 @@ async function main() {
     await prisma.bugReport.update({ where: { id: secondBugId }, data: { status: "resolved" } });
   }
 
-  console.log(`Done. Seeded ${ENGINEERS.length} engineers and ${BUGS.length} bugs.`);
-  console.log(`All seeded engineers share the password: ${DEMO_PASSWORD}`);
+  console.log(`Done. Seeded 1 manager, ${ENGINEERS.length} engineers, and ${BUGS.length} bugs.`);
+  console.log(`Every seeded account shares the password: ${DEMO_PASSWORD}`);
+  console.log(`Log in as the manager (${MANAGER.email}) to dispatch bugs and register new engineers.`);
 }
 
 main()

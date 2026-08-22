@@ -7,9 +7,12 @@ import type {
   PriorityItem,
   ApiResponse,
   BugStatus,
+  AuthUser,
+  LoginResponse,
 } from "./types"
 
 import axios, { AxiosRequestConfig } from "axios"
+import { getToken, clearToken } from "./auth"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api"
 
@@ -17,6 +20,30 @@ const client = axios.create({
   baseURL: BASE,
   headers: { "Content-Type": "application/json" },
 })
+
+// Attach the logged-in user's token to every request, if there is one.
+client.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers.set("Authorization", `Bearer ${token}`)
+  }
+  return config
+})
+
+// A 401 means the token is missing, expired, or invalid — clear it and send
+// the user back to the login page rather than showing a confusing error.
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401 && typeof window !== "undefined") {
+      clearToken()
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login"
+      }
+    }
+    return Promise.reject(error)
+  }
+)
 
 async function request<T>(
   path: string,
@@ -132,4 +159,21 @@ export async function toggleAvailability(
     method: "PATCH",
     body: JSON.stringify({ available }),
   })
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export async function login(
+  email: string,
+  password: string
+): Promise<ApiResponse<LoginResponse>> {
+  return request<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  const res = await request<AuthUser>("/auth/me", { cache: "no-store" })
+  return res.data ?? null
 }

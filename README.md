@@ -150,20 +150,25 @@ Defined in `server/prisma/schema.prisma`:
 
 Base path: `/api`
 
+Every route below except `/health` and `POST /auth/login` requires a valid `Authorization: Bearer <token>` header, obtained by logging in. Routes marked **lead/manager** additionally require that role.
+
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | Health check |
+| `POST` | `/auth/login` | Log in with email + password, returns a JWT |
+| `GET` | `/auth/me` | Get the currently logged-in user |
 | `POST` | `/bugs` | Submit a new bug (runs severity scoring + duplicate detection) |
 | `GET` | `/bugs` | List bugs (optionally filter by `?status=`) |
 | `GET` | `/bugs/:id` | Get a single bug |
 | `PATCH` | `/bugs/:id/status` | Update a bug's status |
-| `POST` | `/assign` | Assign a bug to the best-fit engineer |
-| `DELETE` | `/assign/:bugId` | Unassign a bug |
+| `POST` | `/assign` | **lead/manager.** Assign a bug to the best-fit engineer |
+| `POST` | `/assign/manual` | **lead/manager.** Assign a bug to a specific engineer |
+| `DELETE` | `/assign/:bugId` | **lead/manager.** Unassign a bug |
 | `GET` | `/priority` | Get the current priority queue |
-| `POST` | `/users` | Create an engineer/user |
+| `POST` | `/users` | **lead/manager.** Create an engineer/user |
 | `GET` | `/users` | List users |
 | `GET` | `/users/:id` | Get a single user |
-| `PATCH` | `/users/:id/availability` | Toggle an engineer's availability |
+| `PATCH` | `/users/:id/availability` | Toggle availability — your own, or any user's if you're lead/manager |
 
 Example — submitting a bug:
 
@@ -230,7 +235,9 @@ npm run dev           # starts the Next.js app on http://localhost:3000
 | `PORT` | Port the Express server listens on | `4000` |
 | `NODE_ENV` | `development` / `production` / `test` | `development` |
 | `DATABASE_URL` | PostgreSQL connection string (used by Prisma) | — |
-| `JWT_SECRET` | Secret used to sign JWTs | `dev-secret-change-in-production` |
+| `JWT_SECRET` | Secret used to sign JWTs. **Must** be overridden in production — the server refuses to start with the default value when `NODE_ENV=production`. | `dev-secret-change-in-production` |
+| `JWT_EXPIRES_IN` | How long a login session lasts | `12h` |
+| `FRONTEND_URL` | The one origin the API accepts requests from (CORS) | `http://localhost:3000` |
 
 **`client/.env.local`**
 
@@ -250,6 +257,7 @@ npm run dev           # starts the Next.js app on http://localhost:3000
 | `npm run prisma:generate` | Generate the Prisma client |
 | `npm run prisma:migrate` | Run Prisma migrations |
 | `npm run prisma:studio` | Open Prisma Studio |
+| `npm run prisma:seed` | Wipe and reseed the database with a demo manager, engineers, and bugs |
 
 **Client** (`client/package.json`)
 

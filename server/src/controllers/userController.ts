@@ -43,11 +43,23 @@ export async function getUser(req: Request, res: Response): Promise<void> {
   res.json({ success: true, data: user });
 }
 
+const MANAGEMENT_ROLES = ["lead", "manager"];
+
 /**
- * PATCH /users/:id/availability — Toggle engineer availability
+ * PATCH /users/:id/availability — Toggle engineer availability.
+ * An engineer can toggle their own availability; changing someone else's
+ * requires a lead/manager role.
  */
 export async function toggleAvailability(req: Request, res: Response): Promise<void> {
+  const targetId = String(req.params["id"]);
+  const isSelf = req.user!.id === targetId;
+  const isManagement = MANAGEMENT_ROLES.includes(req.user!.role);
+
+  if (!isSelf && !isManagement) {
+    throw AppError.forbidden("You can only change your own availability");
+  }
+
   const { available } = req.body;
-  const user = await userService.toggleAvailability(String(req.params["id"]), available);
+  const user = await userService.toggleAvailability(targetId, available);
   res.json({ success: true, data: user });
 }

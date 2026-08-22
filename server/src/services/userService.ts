@@ -54,6 +54,14 @@ export async function listUsers() {
   });
 }
 
+/**
+ * Only used by the login flow — every other lookup deliberately leaves the
+ * password hash out of the result.
+ */
+export async function findUserByEmailForLogin(email: string) {
+  return prisma.user.findUnique({ where: { email } });
+}
+
 export async function getUserById(userId: string) {
   return prisma.user.findUnique({
     where: { id: userId },

@@ -1,17 +1,49 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import { listBugs, listUsers, getPriorityQueue } from "@/lib/api"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import { Bug, Users, ListChecks, AlertTriangle } from "lucide-react"
+import { Bug, Users, ListChecks, AlertTriangle, Loader2 } from "lucide-react"
 import type { Bug as BugType, Engineer, PriorityItem } from "@/lib/types"
 import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
 
-export default async function Dashboard() {
-  const [bugs, engineers, queue] = await Promise.all([
-    listBugs(),
-    listUsers(),
-    getPriorityQueue(),
-  ])
+export default function Dashboard() {
+  const [bugs, setBugs] = useState<BugType[]>([])
+  const [engineers, setEngineers] = useState<Engineer[]>([])
+  const [queue, setQueue] = useState<PriorityItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      const [bugsRes, engineersRes, queueRes] = await Promise.all([
+        listBugs(),
+        listUsers(),
+        getPriorityQueue(),
+      ])
+      if (cancelled) return
+      setBugs(bugsRes)
+      setEngineers(engineersRes)
+      setQueue(queueRes)
+      setLoading(false)
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
+      </div>
+    )
+  }
 
   const openCount = bugs.filter((b) => b.status === "open").length
   const assignedCount = bugs.filter((b) => b.status === "assigned").length
