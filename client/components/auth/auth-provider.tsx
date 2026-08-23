@@ -22,10 +22,12 @@ export function useAuth(): AuthContextValue {
   return ctx
 }
 
-// /login and /register redirect straight to the app if you're already
-// signed in. /accept-invite never does — someone might deliberately want to
-// accept a different invite while a stale session is still around.
-const AUTH_PAGES = ["/login", "/register"]
+// The landing page, /login, and /register all redirect straight to the app
+// if you're already signed in — there's no reason to show a marketing page
+// or a login form to someone who's already in. /accept-invite never
+// redirects either way — someone might deliberately want to accept a
+// different invite while a stale session is still around.
+const AUTH_PAGES = ["/", "/login", "/register"]
 const OPEN_PAGES = ["/accept-invite"]
 
 /**
@@ -58,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isAuthPage) {
-      if (hasToken) router.replace("/")
+      if (hasToken) router.replace("/dashboard")
       return
     }
     if (isOpenPage) return

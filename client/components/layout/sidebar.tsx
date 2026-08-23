@@ -9,7 +9,7 @@ import { useAuth } from "@/components/auth/auth-provider"
 // Settings will be added back once that page exists — linking to it before
 // then would just produce a 404 from the sidebar.
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/bugs", label: "Bugs", icon: Bug },
   { href: "/triage", label: "Triage Queue", icon: ListTodo },
   { href: "/assignments", label: "Assignments", icon: Users },

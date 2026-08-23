@@ -39,7 +39,7 @@ function AcceptInviteForm() {
         return
       }
       setToken(res.data.token)
-      router.replace("/")
+      router.replace("/dashboard")
     })
   }
 

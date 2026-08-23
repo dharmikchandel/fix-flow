@@ -29,7 +29,7 @@ export default function RegisterPage() {
         return
       }
       setToken(res.data.token)
-      router.replace("/")
+      router.replace("/dashboard")
     })
   }
 

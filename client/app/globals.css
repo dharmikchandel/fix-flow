@@ -82,3 +82,63 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+/* ── Landing page motion primitives ──────────────────────────────────────────
+   Used by the marketing page only (the "Reveal" scroll-in wrapper and the
+   live triage demo). Kept here with the rest of the app's design tokens
+   instead of scattered as inline <style> blocks. */
+
+@keyframes fixflow-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fixflow-grow-width {
+  from {
+    width: 0%;
+  }
+  to {
+    width: var(--fixflow-target-width, 100%);
+  }
+}
+
+@keyframes fixflow-drift {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-2%, 2%);
+  }
+}
+
+.fixflow-reveal {
+  opacity: 0;
+}
+.fixflow-reveal.is-visible {
+  animation: fixflow-fade-up 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fixflow-stage-enter {
+  animation: fixflow-fade-up 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fixflow-grow-bar {
+  animation: fixflow-grow-width 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fixflow-reveal,
+  .fixflow-reveal.is-visible,
+  .fixflow-stage-enter,
+  .fixflow-grow-bar {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
