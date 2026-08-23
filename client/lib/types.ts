@@ -30,6 +30,21 @@ export interface BugAssignment {
   user?: AssigneeSummary
 }
 
+/**
+ * How a bug's severity score was arrived at — keyword hits, module weight,
+ * description depth, environment multiplier — plus a confidence read on the
+ * label. Only present on the single-bug detail response, not list views.
+ */
+export interface SeverityBreakdown {
+  score: number
+  label: SeverityLabel
+  confidence: number
+  keywordScore: number
+  moduleScore: number
+  depthBonus: number
+  envMultiplier: number
+}
+
 export interface Bug {
   id: string
   title: string
@@ -43,6 +58,7 @@ export interface Bug {
   createdAt: string
   updatedAt: string
   assignment?: BugAssignment | null
+  severityBreakdown?: SeverityBreakdown
 }
 
 export interface BugSubmissionResponse {
@@ -193,6 +209,24 @@ export interface AppNotification {
 export interface NotificationsResponse {
   notifications: AppNotification[]
   unreadCount: number
+}
+
+// ─── Analytics ────────────────────────────────────────────────────────────────
+
+export interface AnalyticsTotals {
+  openBugs: number
+  criticalBugs: number
+  unassignedBugs: number
+  engineersOverloaded: number
+  duplicateRatePercent: number
+  avgTriageHours: number | null
+}
+
+export interface AnalyticsResult {
+  totals: AnalyticsTotals
+  severityDistribution: { label: string; count: number }[]
+  statusBreakdown: { status: string; count: number }[]
+  moduleBreakdown: { module: string; count: number; criticalCount: number }[]
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────

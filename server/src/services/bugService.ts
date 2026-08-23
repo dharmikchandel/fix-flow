@@ -1,5 +1,5 @@
 import prisma from "../config/database.js";
-import { calculateSeverity } from "./severityService.js";
+import { calculateSeverity, explainSeverity } from "./severityService.js";
 import { findDuplicates } from "./duplicateService.js";
 import { recordEvent } from "./eventService.js";
 import { notifyManagers, notifyUser } from "./notificationService.js";
@@ -41,6 +41,7 @@ export async function submitBug(
       environment: input.environment ?? null,
       severityScore: severity.score,
       severityLabel: severity.label,
+      duplicateCount: duplicates.length,
       status: "open",
     },
   });
@@ -75,14 +76,24 @@ const WITH_ASSIGNEE = {
   },
 } as const;
 
-/**
- * Retrieve a single bug by ID, if it belongs to the caller's organization.
- */
-export async function getBugById(bugId: string, organizationId: string) {
+async function findBugWithAssignee(bugId: string, organizationId: string) {
   return prisma.bugReport.findFirst({
     where: { id: bugId, organizationId },
     include: WITH_ASSIGNEE,
   });
+}
+
+/**
+ * Retrieve a single bug by ID, if it belongs to the caller's organization.
+ * Includes a severity breakdown, recomputed on demand from the bug's own
+ * stored fields (never stored itself — it's fully deterministic from them).
+ */
+export async function getBugById(bugId: string, organizationId: string) {
+  const bug = await findBugWithAssignee(bugId, organizationId);
+  if (!bug) return null;
+
+  const severityBreakdown = explainSeverity(bug.title, bug.description, bug.module, bug.environment ?? undefined);
+  return { ...bug, severityBreakdown };
 }
 
 export interface ListBugsOptions {
@@ -93,7 +104,7 @@ export interface ListBugsOptions {
 }
 
 export interface PaginatedBugs {
-  bugs: Awaited<ReturnType<typeof getBugById>>[];
+  bugs: NonNullable<Awaited<ReturnType<typeof findBugWithAssignee>>>[];
   total: number;
   page: number;
   pageSize: number;

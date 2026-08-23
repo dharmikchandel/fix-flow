@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect, useTransition } from "react"
+import { useState } from "react"
 import Link from "next/link"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +11,7 @@ import {
 } from "lucide-react"
 import { getPriorityQueue, assignBug } from "@/lib/api"
 import { useAuth } from "@/components/auth/auth-provider"
-import type { PriorityItem } from "@/lib/types"
+import { queryKeys } from "@/lib/queryKeys"
 import { severityVariant, statusVariant } from "@/lib/badge-helpers"
 
 const MANAGEMENT_ROLES = ["lead", "manager"]
@@ -35,41 +36,33 @@ function Toast({ message, type, onDismiss }: {
 export default function TriageQueuePage() {
   const { user } = useAuth()
   const isManager = user ? MANAGEMENT_ROLES.includes(user.role) : false
+  const queryClient = useQueryClient()
 
-  const [queue, setQueue] = useState<PriorityItem[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [assigningId, setAssigningId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
-  const [isPending, startTransition] = useTransition()
 
-  async function loadQueue() {
-    setLoading(true)
-    const data = await getPriorityQueue()
-    setQueue(data)
-    setLoading(false)
-  }
-
-  useEffect(() => { loadQueue() }, [])
+  const queueQuery = useQuery({ queryKey: queryKeys.priorityQueue, queryFn: getPriorityQueue })
+  const queue = queueQuery.data ?? []
 
   function showToast(msg: string, type: "success" | "error" = "success") {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 5000)
   }
 
-  function handleAssign(bugId: string) {
-    setAssigningId(bugId)
-    startTransition(async () => {
-      const res = await assignBug(bugId)
-      setAssigningId(null)
+  const assignMutation = useMutation({
+    mutationFn: assignBug,
+    onSuccess: (res) => {
       if (res.success && res.data) {
         showToast(`Assigned to ${res.data.engineerName}.`)
-        loadQueue()
+        queryClient.invalidateQueries({ queryKey: queryKeys.priorityQueue })
+        queryClient.invalidateQueries({ queryKey: queryKeys.bugsAll })
+        queryClient.invalidateQueries({ queryKey: queryKeys.users })
       } else {
         showToast(res.error ?? "Assignment failed.", "error")
       }
-    })
-  }
+    },
+    onError: () => showToast("Assignment failed.", "error"),
+  })
 
   const filtered = queue.filter((item) => {
     if (!search.trim()) return true
@@ -122,12 +115,12 @@ export default function TriageQueuePage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Button variant="secondary" onClick={loadQueue} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
+          <Button variant="secondary" onClick={() => queueQuery.refetch()} disabled={queueQuery.isFetching}>
+            {queueQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
           </Button>
         </div>
 
-        {loading ? (
+        {queueQuery.isPending ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
           </div>
@@ -155,7 +148,7 @@ export default function TriageQueuePage() {
             {/* Rows */}
             <div className="divide-y divide-[var(--border-1)]">
               {filtered.map((item) => {
-                const isAssigning = assigningId === item.bugId && isPending
+                const isAssigning = assignMutation.isPending && assignMutation.variables === item.bugId
                 const isCritical = item.severityLabel === "Critical"
                 return (
                   <div
@@ -211,7 +204,7 @@ export default function TriageQueuePage() {
                           variant="secondary"
                           size="sm"
                           className="text-[10px] h-7 px-2 gap-1"
-                          onClick={() => handleAssign(item.bugId)}
+                          onClick={() => assignMutation.mutate(item.bugId)}
                           disabled={isAssigning}
                         >
                           {isAssigning ? (

@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Search, Bell, Building2, Check, Loader2 } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-provider"
 import { listNotifications, markNotificationRead, markAllNotificationsRead } from "@/lib/api"
-import type { AppNotification } from "@/lib/types"
+import { queryKeys } from "@/lib/queryKeys"
+import type { AppNotification, NotificationsResponse } from "@/lib/types"
 
 const POLL_INTERVAL_MS = 30_000
 
@@ -21,25 +23,50 @@ function notificationTimeAgo(dateStr: string) {
 
 function NotificationBell() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const containerRef = useRef<HTMLDivElement>(null)
-
   const [open, setOpen] = useState(false)
-  const [notifications, setNotifications] = useState<AppNotification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [loading, setLoading] = useState(true)
 
-  async function refresh() {
-    const res = await listNotifications()
-    setNotifications(res.notifications)
-    setUnreadCount(res.unreadCount)
-    setLoading(false)
-  }
+  // Polling via `refetchInterval` replaces the old manual setInterval/clearInterval —
+  // React Query pauses it automatically when the tab isn't visible.
+  const { data, isPending } = useQuery({
+    queryKey: queryKeys.notifications,
+    queryFn: listNotifications,
+    refetchInterval: POLL_INTERVAL_MS,
+  })
+  const notifications = data?.notifications ?? []
+  const unreadCount = data?.unreadCount ?? 0
 
-  useEffect(() => {
-    refresh()
-    const interval = setInterval(refresh, POLL_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [])
+  const markReadMutation = useMutation({
+    mutationFn: (id: string) => markNotificationRead(id),
+    onMutate: (id) => {
+      queryClient.setQueryData<NotificationsResponse>(queryKeys.notifications, (prev) => {
+        if (!prev) return prev
+        const target = prev.notifications.find((n) => n.id === id)
+        if (!target || target.readAt) return prev
+        return {
+          unreadCount: Math.max(prev.unreadCount - 1, 0),
+          notifications: prev.notifications.map((n) =>
+            n.id === id ? { ...n, readAt: new Date().toISOString() } : n
+          ),
+        }
+      })
+    },
+  })
+
+  const markAllReadMutation = useMutation({
+    mutationFn: markAllNotificationsRead,
+    onMutate: () => {
+      queryClient.setQueryData<NotificationsResponse>(queryKeys.notifications, (prev) =>
+        prev
+          ? {
+              unreadCount: 0,
+              notifications: prev.notifications.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() })),
+            }
+          : prev
+      )
+    },
+  })
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -51,20 +78,10 @@ function NotificationBell() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  async function handleOpenNotification(n: AppNotification) {
-    if (!n.readAt) {
-      setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x)))
-      setUnreadCount((c) => Math.max(c - 1, 0))
-      markNotificationRead(n.id)
-    }
+  function handleOpenNotification(n: AppNotification) {
+    if (!n.readAt) markReadMutation.mutate(n.id)
     setOpen(false)
     if (n.bugId) router.push(`/bugs/${n.bugId}`)
-  }
-
-  async function handleMarkAllRead() {
-    setNotifications((prev) => prev.map((x) => ({ ...x, readAt: x.readAt ?? new Date().toISOString() })))
-    setUnreadCount(0)
-    await markAllNotificationsRead()
   }
 
   return (
@@ -87,8 +104,8 @@ function NotificationBell() {
             </span>
             {unreadCount > 0 && (
               <button
-                onClick={handleMarkAllRead}
-                className="flex items-center gap-1 text-xs text-[var(--primary-strong)] hover:text-[var(--primary)] transition-colors"
+                onClick={() => markAllReadMutation.mutate()}
+                className="cursor-pointer flex items-center gap-1 text-xs text-[var(--primary-strong)] hover:text-[var(--primary)] transition-colors"
               >
                 <Check className="h-3 w-3" /> Mark all read
               </button>
@@ -96,7 +113,7 @@ function NotificationBell() {
           </div>
 
           <div className="max-h-80 overflow-y-auto">
-            {loading ? (
+            {isPending ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-[var(--primary)]" />
               </div>

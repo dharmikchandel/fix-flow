@@ -14,6 +14,7 @@ import priorityRoutes from "./routes/priorityRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import attachmentRoutes from "./routes/attachmentRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import analyticsRoutes from "./routes/analyticsRoutes.js";
 import { errorHandler } from "./utils/errorHandler.js";
 
 const app = express();
@@ -55,6 +56,7 @@ app.use("/api/priority", priorityRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/attachments", attachmentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

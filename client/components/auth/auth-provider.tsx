@@ -1,10 +1,12 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2 } from "lucide-react"
 import { getCurrentUser } from "@/lib/api"
 import { getToken, clearToken } from "@/lib/auth"
+import { queryKeys } from "@/lib/queryKeys"
 import type { AuthUser } from "@/lib/types"
 
 interface AuthContextValue {
@@ -27,65 +29,61 @@ const AUTH_PAGES = ["/login", "/register"]
 const OPEN_PAGES = ["/accept-invite"]
 
 /**
- * Gates every page except the ones above behind a valid session. Checks for
- * a stored token on mount and confirms it's still good by asking the API who
- * it belongs to (GET /auth/me) — a token that's merely present but expired
- * or revoked shouldn't be treated as "logged in".
+ * Gates every page except the ones above behind a valid session. "Logged in"
+ * means both a token is present *and* the API still recognizes it — asking
+ * GET /auth/me (via React Query) catches a token that's merely present but
+ * expired or revoked, and gives every other page a shared, cached answer to
+ * "who am I" instead of each one asking separately.
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  const queryClient = useQueryClient()
+
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isOpenPage = OPEN_PAGES.includes(pathname)
   const isPublicPage = isAuthPage || isOpenPage
+  const hasToken = getToken() !== null
 
-  const [user, setUser] = useState<AuthUser | null>(null)
-  const [checked, setChecked] = useState(false)
+  const userQuery = useQuery({
+    queryKey: queryKeys.me,
+    queryFn: async () => {
+      const current = await getCurrentUser()
+      if (!current) throw new Error("Not authenticated")
+      return current
+    },
+    enabled: !isPublicPage && hasToken,
+    retry: false,
+  })
 
   useEffect(() => {
-    if (isOpenPage) {
-      setChecked(true)
-      return
-    }
-
     if (isAuthPage) {
-      // Already logged in and landed here anyway (e.g. typed the URL
-      // directly) — send them straight to the app instead of showing the form.
-      if (getToken()) {
-        router.replace("/")
-        return
-      }
-      setChecked(true)
+      if (hasToken) router.replace("/")
       return
     }
+    if (isOpenPage) return
 
-    if (!getToken()) {
+    if (!hasToken) {
       router.replace("/login")
       return
     }
-
-    getCurrentUser().then((current) => {
-      if (!current) {
-        clearToken()
-        router.replace("/login")
-        return
-      }
-      setUser(current)
-      setChecked(true)
-    })
-  }, [isAuthPage, isOpenPage, router])
+    if (userQuery.isError) {
+      clearToken()
+      router.replace("/login")
+    }
+  }, [isAuthPage, isOpenPage, hasToken, userQuery.isError, router])
 
   function logout() {
     clearToken()
-    setUser(null)
+    queryClient.clear()
     router.replace("/login")
   }
 
   if (isPublicPage) {
-    return <AuthContext.Provider value={{ user, logout }}>{children}</AuthContext.Provider>
+    return <AuthContext.Provider value={{ user: null, logout }}>{children}</AuthContext.Provider>
   }
 
-  if (!checked) {
+  if (!hasToken || userQuery.isPending) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
@@ -93,5 +91,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return <AuthContext.Provider value={{ user, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user: userQuery.data ?? null, logout }}>{children}</AuthContext.Provider>
 }

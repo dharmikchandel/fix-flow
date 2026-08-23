@@ -31,6 +31,11 @@ model BugReport {
   environment      String?
   severityScore    Int      @map("severity_score")
   severityLabel    String   @map("severity_label")
+  // How many likely duplicates were found at submission time — recorded once,
+  // here, since the duplicate-detection engine only ever runs at submission
+  // and the answer would otherwise be unrecoverable after the fact. Powers
+  // the "duplicate rate" analytics metric.
+  duplicateCount   Int      @default(0) @map("duplicate_count")
   status           String   @default("open")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useTransition } from "react"
+import { useState } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,9 +13,12 @@ import {
   listInvites, createInvite, revokeInvite,
 } from "@/lib/api"
 import { useAuth } from "@/components/auth/auth-provider"
+import { queryKeys } from "@/lib/queryKeys"
 import type { Engineer, Bug, Invite } from "@/lib/types"
 
 const MANAGEMENT_ROLES = ["lead", "manager"]
+// The assign-bug picker wants every open bug, not one page of them.
+const OPEN_BUGS_PARAMS = { status: "open", pageSize: 100 }
 
 function Toast({ message, type, onDismiss }: {
   message: string; type: "success" | "error"; onDismiss: () => void
@@ -48,9 +52,26 @@ function AssignModal({
   onClose: () => void
   onAssigned: (msg: string) => void
 }) {
+  const queryClient = useQueryClient()
   const [selectedBugId, setSelectedBugId] = useState("")
-  const [isPending, startTransition] = useTransition()
   const [error, setError] = useState("")
+
+  const assignMutation = useMutation({
+    mutationFn: ({ bugId, engineerId }: { bugId: string; engineerId: string }) =>
+      assignBugToEngineer(bugId, engineerId),
+    onSuccess: (res) => {
+      if (res.success && res.data) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.bugsAll })
+        queryClient.invalidateQueries({ queryKey: queryKeys.users })
+        queryClient.invalidateQueries({ queryKey: queryKeys.priorityQueue })
+        onAssigned(`Bug assigned to ${res.data.engineerName}.`)
+        onClose()
+      } else {
+        setError(res.error ?? "Assignment failed.")
+      }
+    },
+    onError: () => setError("Assignment failed."),
+  })
 
   if (!open || !engineer) return null
 
@@ -59,15 +80,7 @@ function AssignModal({
       setError("Select a bug to assign.")
       return
     }
-    startTransition(async () => {
-      const res = await assignBugToEngineer(selectedBugId, engineer.id)
-      if (res.success && res.data) {
-        onAssigned(`Bug assigned to ${res.data.engineerName}.`)
-        onClose()
-      } else {
-        setError(res.error ?? "Assignment failed.")
-      }
-    })
+    assignMutation.mutate({ bugId: selectedBugId, engineerId: engineer.id })
   }
 
   const filteredBugs = unassignedBugs.filter((b) =>
@@ -138,9 +151,9 @@ function AssignModal({
           <Button
             variant="default"
             onClick={handleAssign}
-            disabled={isPending || !selectedBugId}
+            disabled={assignMutation.isPending || !selectedBugId}
           >
-            {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <UserCheck className="h-4 w-4 mr-2" />}
+            {assignMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <UserCheck className="h-4 w-4 mr-2" />}
             Assign
           </Button>
         </div>
@@ -151,11 +164,11 @@ function AssignModal({
 
 // ─── Invite Engineer Modal ────────────────────────────────────────────────────
 
-function InviteModal({ open, onClose, onCreated }: {
+function InviteModal({ open, onClose }: {
   open: boolean
   onClose: () => void
-  onCreated: () => void
 }) {
+  const queryClient = useQueryClient()
   const [email, setEmail] = useState("")
   const [role, setRole] = useState("engineer")
   const [expertise, setExpertise] = useState("")
@@ -163,7 +176,19 @@ function InviteModal({ open, onClose, onCreated }: {
   const [error, setError] = useState("")
   const [link, setLink] = useState("")
   const [copied, setCopied] = useState(false)
-  const [isPending, startTransition] = useTransition()
+
+  const inviteMutation = useMutation({
+    mutationFn: createInvite,
+    onSuccess: (res) => {
+      if (!res.success || !res.data) {
+        setError(res.error ?? "Could not create invite.")
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.invites })
+      setLink(`${window.location.origin}/accept-invite?token=${res.data.token}`)
+    },
+    onError: () => setError("Could not create invite."),
+  })
 
   if (!open) return null
 
@@ -176,19 +201,11 @@ function InviteModal({ open, onClose, onCreated }: {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError("")
-    startTransition(async () => {
-      const res = await createInvite({
-        email,
-        role,
-        expertise: expertise.split(",").map((s) => s.trim()).filter(Boolean),
-        maxCapacity,
-      })
-      if (!res.success || !res.data) {
-        setError(res.error ?? "Could not create invite.")
-        return
-      }
-      setLink(`${window.location.origin}/accept-invite?token=${res.data.token}`)
-      onCreated()
+    inviteMutation.mutate({
+      email,
+      role,
+      expertise: expertise.split(",").map((s) => s.trim()).filter(Boolean),
+      maxCapacity,
     })
   }
 
@@ -258,8 +275,8 @@ function InviteModal({ open, onClose, onCreated }: {
 
             <div className="flex justify-end gap-3">
               <Button type="button" variant="ghost" onClick={handleClose}>Cancel</Button>
-              <Button type="submit" variant="default" disabled={isPending}>
-                {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
+              <Button type="submit" variant="default" disabled={inviteMutation.isPending}>
+                {inviteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
                 Create invite
               </Button>
             </div>
@@ -275,60 +292,54 @@ function InviteModal({ open, onClose, onCreated }: {
 export default function AssignmentsPage() {
   const { user } = useAuth()
   const isManager = user ? MANAGEMENT_ROLES.includes(user.role) : false
+  const queryClient = useQueryClient()
 
-  const [engineers, setEngineers] = useState<Engineer[]>([])
-  const [unassignedBugs, setUnassignedBugs] = useState<Bug[]>([])
-  const [invites, setInvites] = useState<Invite[]>([])
-  const [loading, setLoading] = useState(true)
   const [modalEngineer, setModalEngineer] = useState<Engineer | null>(null)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
-  const [isPending, startTransition] = useTransition()
 
-  async function loadData() {
-    setLoading(true)
-    const [engs, bugsPage, pendingInvites] = await Promise.all([
-      listUsers(),
-      // The assign-bug picker wants every open bug, not one page of them.
-      listBugs({ status: "open", pageSize: 100 }),
-      isManager ? listInvites() : Promise.resolve([]),
-    ])
-    setEngineers(engs)
-    setUnassignedBugs(bugsPage.bugs.filter((b) => !b.assignment))
-    setInvites(pendingInvites)
-    setLoading(false)
-  }
+  const engineersQuery = useQuery({ queryKey: queryKeys.users, queryFn: listUsers })
+  const bugsQuery = useQuery({
+    queryKey: queryKeys.bugs(OPEN_BUGS_PARAMS),
+    queryFn: () => listBugs(OPEN_BUGS_PARAMS),
+  })
+  const invitesQuery = useQuery({ queryKey: queryKeys.invites, queryFn: listInvites, enabled: isManager })
 
-  useEffect(() => { loadData() }, [isManager])
+  const engineers = engineersQuery.data ?? []
+  const unassignedBugs = (bugsQuery.data?.bugs ?? []).filter((b) => !b.assignment)
+  const invites = invitesQuery.data ?? []
+  const isLoading = engineersQuery.isPending || bugsQuery.isPending || (isManager && invitesQuery.isPending)
 
   function showToast(msg: string, type: "success" | "error" = "success") {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 5000)
   }
 
-  function handleToggleAvailability(eng: Engineer) {
-    startTransition(async () => {
-      const res = await toggleAvailability(eng.id, !eng.available)
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, available }: { id: string; available: boolean }) => toggleAvailability(id, available),
+    onSuccess: (res, variables) => {
       if (res.success) {
-        showToast(`${eng.name} marked as ${!eng.available ? "available" : "unavailable"}.`)
-        loadData()
+        queryClient.invalidateQueries({ queryKey: queryKeys.users })
+        showToast(`Marked as ${variables.available ? "available" : "unavailable"}.`)
       } else {
         showToast(res.error ?? "Failed to update.", "error")
       }
-    })
-  }
+    },
+    onError: () => showToast("Failed to update.", "error"),
+  })
 
-  function handleRevokeInvite(invite: Invite) {
-    startTransition(async () => {
-      const res = await revokeInvite(invite.id)
+  const revokeMutation = useMutation({
+    mutationFn: (invite: Invite) => revokeInvite(invite.id),
+    onSuccess: (res, invite) => {
       if (res.success) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.invites })
         showToast(`Invite to ${invite.email} revoked.`)
-        loadData()
       } else {
         showToast(res.error ?? "Failed to revoke invite.", "error")
       }
-    })
-  }
+    },
+    onError: () => showToast("Failed to revoke invite.", "error"),
+  })
 
   const overloaded = engineers.filter((e) => e.workload >= e.maxCapacity)
   const available = engineers.filter((e) => e.available && e.workload < e.maxCapacity)
@@ -342,17 +353,12 @@ export default function AssignmentsPage() {
           engineer={modalEngineer}
           unassignedBugs={unassignedBugs}
           onClose={() => setModalEngineer(null)}
-          onAssigned={(msg) => {
-            showToast(msg)
-            setModalEngineer(null)
-            loadData()
-          }}
+          onAssigned={(msg) => showToast(msg)}
         />
       )}
       <InviteModal
         open={inviteModalOpen}
         onClose={() => setInviteModalOpen(false)}
-        onCreated={loadData}
       />
 
       <div className="space-y-6">
@@ -386,7 +392,7 @@ export default function AssignmentsPage() {
           </div>
         </div>
 
-        {loading ? (
+        {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
           </div>
@@ -406,6 +412,7 @@ export default function AssignmentsPage() {
                   const pct = Math.min(Math.round((eng.workload / eng.maxCapacity) * 100), 100)
                   const overloaded = eng.workload >= eng.maxCapacity
                   const canToggle = isManager || user?.id === eng.id
+                  const isTogglePending = toggleMutation.isPending && toggleMutation.variables?.id === eng.id
                   const isOptimal =
                     !overloaded &&
                     eng.available &&
@@ -491,10 +498,12 @@ export default function AssignmentsPage() {
                                   ? "border-[var(--success-soft)] text-[var(--success)] bg-[var(--success-soft)] hover:bg-[var(--success)] hover:text-white"
                                   : "border-[var(--border-1)] text-[var(--text-3)] hover:border-[var(--danger)] hover:text-[var(--danger)]"
                               }`}
-                              onClick={() => handleToggleAvailability(eng)}
-                              disabled={isPending}
+                              onClick={() => toggleMutation.mutate({ id: eng.id, available: !eng.available })}
+                              disabled={isTogglePending}
                             >
-                              {eng.available ? (
+                              {isTogglePending ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : eng.available ? (
                                 <CheckCircle2 className="h-3 w-3" />
                               ) : (
                                 <XCircle className="h-3 w-3" />
@@ -544,24 +553,27 @@ export default function AssignmentsPage() {
                 </CardHeader>
                 <CardContent className="pt-4">
                   <div className="divide-y divide-[var(--border-1)]">
-                    {invites.map((invite) => (
-                      <div key={invite.id} className="flex items-center justify-between gap-4 py-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-[var(--text-1)] truncate">{invite.email}</p>
-                          <p className="text-xs text-[var(--text-3)] font-mono mt-0.5">
-                            {invite.role} • expires {new Date(invite.expiresAt).toLocaleDateString()}
-                          </p>
+                    {invites.map((invite) => {
+                      const isRevoking = revokeMutation.isPending && revokeMutation.variables?.id === invite.id
+                      return (
+                        <div key={invite.id} className="flex items-center justify-between gap-4 py-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-[var(--text-1)] truncate">{invite.email}</p>
+                            <p className="text-xs text-[var(--text-3)] font-mono mt-0.5">
+                              {invite.role} • expires {new Date(invite.expiresAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => revokeMutation.mutate(invite)}
+                            disabled={isRevoking}
+                            className="shrink-0 rounded p-1.5 text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] transition-colors"
+                            title="Revoke invite"
+                          >
+                            {isRevoking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleRevokeInvite(invite)}
-                          disabled={isPending}
-                          className="shrink-0 rounded p-1.5 text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] transition-colors"
-                          title="Revoke invite"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </CardContent>
               </Card>

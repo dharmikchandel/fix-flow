@@ -1,51 +1,37 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { listBugs, listUsers, getPriorityQueue } from "@/lib/api"
+import { queryKeys } from "@/lib/queryKeys"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { Bug, Users, ListChecks, AlertTriangle, Loader2 } from "lucide-react"
-import type { Bug as BugType, Engineer, PriorityItem } from "@/lib/types"
 import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
 
+// Dashboard metrics want every bug, not one page of them — 100 is the
+// server's page-size ceiling, comfortably above a small team's volume.
+const DASHBOARD_BUG_PARAMS = { pageSize: 100 }
+
 export default function Dashboard() {
-  const [bugs, setBugs] = useState<BugType[]>([])
-  const [engineers, setEngineers] = useState<Engineer[]>([])
-  const [queue, setQueue] = useState<PriorityItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const bugsQuery = useQuery({
+    queryKey: queryKeys.bugs(DASHBOARD_BUG_PARAMS),
+    queryFn: () => listBugs(DASHBOARD_BUG_PARAMS),
+  })
+  const engineersQuery = useQuery({ queryKey: queryKeys.users, queryFn: listUsers })
+  const queueQuery = useQuery({ queryKey: queryKeys.priorityQueue, queryFn: getPriorityQueue })
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      const [bugsRes, engineersRes, queueRes] = await Promise.all([
-        // Dashboard metrics want every bug, not one page of them — 100 is the
-        // server's page-size ceiling, comfortably above a small team's volume.
-        listBugs({ pageSize: 100 }),
-        listUsers(),
-        getPriorityQueue(),
-      ])
-      if (cancelled) return
-      setBugs(bugsRes.bugs)
-      setEngineers(engineersRes)
-      setQueue(queueRes)
-      setLoading(false)
-    }
-
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  if (loading) {
+  if (bugsQuery.isPending || engineersQuery.isPending || queueQuery.isPending) {
     return (
       <div className="flex items-center justify-center py-32">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
       </div>
     )
   }
+
+  const bugs = bugsQuery.data?.bugs ?? []
+  const engineers = engineersQuery.data ?? []
+  const queue = queueQuery.data ?? []
 
   const openCount = bugs.filter((b) => b.status === "open").length
   const assignedCount = bugs.filter((b) => b.status === "assigned").length

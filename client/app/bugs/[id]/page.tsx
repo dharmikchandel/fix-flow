@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, useTransition, use } from "react"
-import { useRouter } from "next/navigation"
+import { useState, use } from "react"
 import Link from "next/link"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -16,7 +16,8 @@ import {
   listEvents, addComment, listAttachments, uploadAttachment, deleteAttachment, downloadAttachment,
 } from "@/lib/api"
 import { useAuth } from "@/components/auth/auth-provider"
-import type { Bug, BugStatus, BugEvent, Attachment } from "@/lib/types"
+import { queryKeys } from "@/lib/queryKeys"
+import type { BugStatus, BugEvent, Attachment } from "@/lib/types"
 import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
 
 const MANAGEMENT_ROLES = ["lead", "manager"]
@@ -98,121 +99,126 @@ function ActivityRow({ event }: { event: BugEvent }) {
 }
 
 export default function BugDetailPage({ params, }: { params: Promise<{ id: string }> }) {
-  const router = useRouter()
   const { id } = use(params)
   const { user } = useAuth()
   const isManager = user ? MANAGEMENT_ROLES.includes(user.role) : false
+  const queryClient = useQueryClient()
 
-  const [bug, setBug] = useState<Bug | null>(null)
-  const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
-  const [isPending, startTransition] = useTransition()
-
-  const [events, setEvents] = useState<BugEvent[]>([])
-  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [commentBody, setCommentBody] = useState("")
-  const [commentPending, startCommentTransition] = useTransition()
-  const [uploadPending, startUploadTransition] = useTransition()
 
-  async function loadBug() {
-    setLoading(true)
-    const data = await getBug(id)
-    setBug(data)
-    setLoading(false)
-  }
+  const bugQuery = useQuery({ queryKey: queryKeys.bug(id), queryFn: () => getBug(id) })
+  const eventsQuery = useQuery({ queryKey: queryKeys.bugEvents(id), queryFn: () => listEvents(id) })
+  const attachmentsQuery = useQuery({ queryKey: queryKeys.bugAttachments(id), queryFn: () => listAttachments(id) })
 
-  async function loadActivity() {
-    const [eventsData, attachmentsData] = await Promise.all([listEvents(id), listAttachments(id)])
-    setEvents(eventsData)
-    setAttachments(attachmentsData)
-  }
-
-  useEffect(() => {
-    loadBug()
-    loadActivity()
-  }, [id])
+  const bug = bugQuery.data
+  const events = eventsQuery.data ?? []
+  const attachments = attachmentsQuery.data ?? []
 
   function showToast(msg: string, type: "success" | "error" = "success") {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 5000)
   }
 
-  function handleAssign() {
-    startTransition(async () => {
-      const res = await assignBug(id)
+  // Every mutation below touches this bug's own detail + activity, and often
+  // the lists/queue/engineers elsewhere in the app too (workload, status
+  // counts) — invalidating all of them together is what keeps every page
+  // that happens to be open in sync without each one polling on its own.
+  function invalidateBugAndRelated() {
+    queryClient.invalidateQueries({ queryKey: queryKeys.bug(id) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.bugEvents(id) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.bugsAll })
+    queryClient.invalidateQueries({ queryKey: queryKeys.priorityQueue })
+    queryClient.invalidateQueries({ queryKey: queryKeys.users })
+  }
+
+  const assignMutation = useMutation({
+    mutationFn: () => assignBug(id),
+    onSuccess: (res) => {
       if (res.success && res.data) {
         showToast(`Assigned to ${res.data.engineerName}. Reason: ${res.data.reason}`)
-        loadBug()
-        loadActivity()
+        invalidateBugAndRelated()
       } else {
         showToast(res.error ?? "Assignment failed.", "error")
       }
-    })
-  }
+    },
+    onError: () => showToast("Assignment failed.", "error"),
+  })
 
-  function handleUnassign() {
-    startTransition(async () => {
-      const res = await unassignBug(id)
+  const unassignMutation = useMutation({
+    mutationFn: () => unassignBug(id),
+    onSuccess: (res) => {
       if (res.success) {
         showToast("Bug unassigned successfully.")
-        loadBug()
-        loadActivity()
+        invalidateBugAndRelated()
       } else {
         showToast(res.error ?? "Unassign failed.", "error")
       }
-    })
-  }
+    },
+    onError: () => showToast("Unassign failed.", "error"),
+  })
 
-  function handleStatusChange(status: BugStatus) {
-    startTransition(async () => {
-      const res = await updateBugStatus(id, status)
+  const statusMutation = useMutation({
+    mutationFn: (status: BugStatus) => updateBugStatus(id, status),
+    onSuccess: (res, status) => {
       if (res.success) {
         showToast(`Status updated to "${status}".`)
-        loadBug()
-        loadActivity()
+        invalidateBugAndRelated()
       } else {
         showToast(res.error ?? "Status update failed.", "error")
       }
-    })
-  }
+    },
+    onError: () => showToast("Status update failed.", "error"),
+  })
+
+  const commentMutation = useMutation({
+    mutationFn: (body: string) => addComment(id, body),
+    onSuccess: (res) => {
+      if (res.success) {
+        setCommentBody("")
+        queryClient.invalidateQueries({ queryKey: queryKeys.bugEvents(id) })
+      } else {
+        showToast(res.error ?? "Could not post comment.", "error")
+      }
+    },
+    onError: () => showToast("Could not post comment.", "error"),
+  })
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => uploadAttachment(id, file),
+    onSuccess: (res) => {
+      if (res.success) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.bugAttachments(id) })
+      } else {
+        showToast(res.error ?? "Upload failed.", "error")
+      }
+    },
+    onError: () => showToast("Upload failed.", "error"),
+  })
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: (attachmentId: string) => deleteAttachment(attachmentId),
+    onSuccess: (res) => {
+      if (res.success) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.bugAttachments(id) })
+      } else {
+        showToast(res.error ?? "Could not remove attachment.", "error")
+      }
+    },
+    onError: () => showToast("Could not remove attachment.", "error"),
+  })
 
   function handleAddComment(e: React.FormEvent) {
     e.preventDefault()
     if (!commentBody.trim()) return
-    startCommentTransition(async () => {
-      const res = await addComment(id, commentBody)
-      if (res.success) {
-        setCommentBody("")
-        loadActivity()
-      } else {
-        showToast(res.error ?? "Could not post comment.", "error")
-      }
-    })
+    commentMutation.mutate(commentBody)
   }
 
   function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = "" // allow re-selecting the same file later
     if (!file) return
-    startUploadTransition(async () => {
-      const res = await uploadAttachment(id, file)
-      if (res.success) {
-        loadActivity()
-      } else {
-        showToast(res.error ?? "Upload failed.", "error")
-      }
-    })
-  }
-
-  function handleDeleteAttachment(attachmentId: string) {
-    startUploadTransition(async () => {
-      const res = await deleteAttachment(attachmentId)
-      if (res.success) {
-        loadActivity()
-      } else {
-        showToast(res.error ?? "Could not remove attachment.", "error")
-      }
-    })
+    uploadMutation.mutate(file)
   }
 
   async function handleDownload(attachment: Attachment) {
@@ -223,7 +229,9 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
     }
   }
 
-  if (loading) {
+  const isActionPending = assignMutation.isPending || unassignMutation.isPending || statusMutation.isPending
+
+  if (bugQuery.isPending) {
     return (
       <div className="flex items-center justify-center py-32">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
@@ -299,10 +307,10 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
                   <Button
                     variant="default"
                     size="sm"
-                    onClick={handleAssign}
-                    disabled={isPending}
+                    onClick={() => assignMutation.mutate()}
+                    disabled={isActionPending}
                   >
-                    {isPending ? (
+                    {assignMutation.isPending ? (
                       <Loader2 className="h-3 w-3 animate-spin mr-1" />
                     ) : (
                       <UserCheck className="h-3 w-3 mr-1" />
@@ -313,10 +321,10 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={handleUnassign}
-                    disabled={isPending}
+                    onClick={() => unassignMutation.mutate()}
+                    disabled={isActionPending}
                   >
-                    {isPending ? (
+                    {unassignMutation.isPending ? (
                       <Loader2 className="h-3 w-3 animate-spin mr-1" />
                     ) : (
                       <RotateCcw className="h-3 w-3 mr-1" />
@@ -330,8 +338,8 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
               <select
                 className="h-9 rounded-[var(--radius-md)] border border-[var(--border-1)] bg-[var(--bg-2)] px-2 text-xs text-[var(--text-1)] focus:border-[var(--primary)] focus:outline-none transition-all font-mono"
                 value={bug.status}
-                onChange={(e) => handleStatusChange(e.target.value as BugStatus)}
-                disabled={isPending}
+                onChange={(e) => statusMutation.mutate(e.target.value as BugStatus)}
+                disabled={isActionPending}
               >
                 <option value={bug.status}>{bug.status.replace("_", " ")}</option>
                 {otherStatuses.map((s) => (
@@ -462,6 +470,33 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
                     {bug.severityLabel}
                   </Badge>
                 </div>
+
+                {bug.severityBreakdown && (
+                  <>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-[var(--text-3)]">Confidence</span>
+                      <span className="font-mono text-[var(--text-1)]">
+                        {bug.severityBreakdown.confidence}%
+                      </span>
+                    </div>
+
+                    <div className="pt-3 border-t border-[var(--border-1)] space-y-1.5">
+                      <p className="text-[10px] uppercase tracking-wider text-[var(--text-3)] font-semibold">
+                        How this was scored
+                      </p>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono">
+                        <span className="text-[var(--text-3)]">Keywords</span>
+                        <span className="text-right text-[var(--text-2)]">+{bug.severityBreakdown.keywordScore}</span>
+                        <span className="text-[var(--text-3)]">Module ({bug.module})</span>
+                        <span className="text-right text-[var(--text-2)]">+{bug.severityBreakdown.moduleScore}</span>
+                        <span className="text-[var(--text-3)]">Detail depth</span>
+                        <span className="text-right text-[var(--text-2)]">+{bug.severityBreakdown.depthBonus}</span>
+                        <span className="text-[var(--text-3)]">Environment</span>
+                        <span className="text-right text-[var(--text-2)]">×{bug.severityBreakdown.envMultiplier}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -507,12 +542,16 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
                           </button>
                           {canRemove && (
                             <button
-                              onClick={() => handleDeleteAttachment(file.id)}
-                              disabled={uploadPending}
+                              onClick={() => deleteAttachmentMutation.mutate(file.id)}
+                              disabled={deleteAttachmentMutation.isPending && deleteAttachmentMutation.variables === file.id}
                               title="Remove"
                               className="shrink-0 rounded p-1 text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] transition-colors"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              {deleteAttachmentMutation.isPending && deleteAttachmentMutation.variables === file.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
                             </button>
                           )}
                         </div>
@@ -522,7 +561,7 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
                 )}
 
                 <label className="flex items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-[var(--border-2)] py-2.5 text-xs text-[var(--text-3)] hover:text-[var(--primary-strong)] hover:border-[var(--primary)] transition-colors cursor-pointer">
-                  {uploadPending ? (
+                  {uploadMutation.isPending ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Paperclip className="h-3.5 w-3.5" />
@@ -532,7 +571,7 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
                     type="file"
                     className="hidden"
                     onChange={handleUpload}
-                    disabled={uploadPending}
+                    disabled={uploadMutation.isPending}
                     accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain"
                   />
                 </label>
@@ -569,8 +608,8 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
                 rows={2}
                 className="flex-1 mt-3 rounded-[var(--radius-md)] border border-[var(--border-1)] bg-[var(--bg-1)] px-3 py-2 text-sm text-[var(--text-1)] placeholder:text-[var(--text-3)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-all resize-none"
               />
-              <Button type="submit" size="sm" className="mt-3" disabled={commentPending || !commentBody.trim()}>
-                {commentPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              <Button type="submit" size="sm" className="mt-3" disabled={commentMutation.isPending || !commentBody.trim()}>
+                {commentMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               </Button>
             </form>
           </CardContent>

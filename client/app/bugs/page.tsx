@@ -1,15 +1,16 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Filter, X, Plus, Loader2, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react"
 import { submitBug, listBugs } from "@/lib/api"
-import type { Bug, CreateBugInput } from "@/lib/types"
+import { queryKeys } from "@/lib/queryKeys"
+import type { CreateBugInput } from "@/lib/types"
 import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
 
 const PAGE_SIZE = 20
@@ -34,8 +35,24 @@ function ReportBugModal({
     stepsToReproduce: "",
   })
   const [error, setError] = useState("")
-  const [isPending, startTransition] = useTransition()
-  const router = useRouter()
+  const queryClient = useQueryClient()
+
+  const submitMutation = useMutation({
+    mutationFn: submitBug,
+    onSuccess: (res) => {
+      if (!res.success || !res.data) {
+        setError(res.error ?? "Submission failed.")
+        return
+      }
+      // Matches every bug-list query regardless of its filters/page — each
+      // one currently mounted refetches on its own.
+      queryClient.invalidateQueries({ queryKey: queryKeys.bugsAll })
+      onSuccess(
+        `Bug submitted! ID: ${res.data.bugId} — Severity: ${res.data.severity.label} (score ${res.data.severity.score})`
+      )
+      onClose()
+    },
+  })
 
   if (!open) return null
 
@@ -61,18 +78,7 @@ function ReportBugModal({
       return
     }
 
-    startTransition(async () => {
-      const res = await submitBug(form)
-      if (!res.success || !res.data) {
-        setError(res.error ?? "Submission failed.")
-        return
-      }
-      onSuccess(
-        `Bug submitted! ID: ${res.data.bugId} — Severity: ${res.data.severity.label} (score ${res.data.severity.score})`
-      )
-      router.refresh()
-      onClose()
-    })
+    submitMutation.mutate(form)
   }
 
   const inputClass =
@@ -194,8 +200,8 @@ function ReportBugModal({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" variant="default" disabled={isPending}>
-              {isPending ? (
+            <Button type="submit" variant="default" disabled={submitMutation.isPending}>
+              {submitMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
                 <Plus className="h-4 w-4 mr-2" />
@@ -276,14 +282,10 @@ export default function BugListPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [page, setPage] = useState(1)
-  const [bugs, setBugs] = useState<Bug[]>([])
-  const [total, setTotal] = useState(0)
   const [toast, setToast] = useState("")
-  const [loading, setLoading] = useState(true)
-  const router = useRouter()
 
   // Debounce the search box — waits for a pause in typing, then resets to
-  // page 1 (React batches these two updates, so this only triggers one fetch).
+  // page 1 (React batches these two updates together).
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search)
@@ -292,32 +294,22 @@ export default function BugListPage() {
     return () => clearTimeout(timer)
   }, [search])
 
-  // Bumped after submitting a new bug to force a refetch of the current page
-  // without duplicating the fetch logic below.
-  const [refreshTick, setRefreshTick] = useState(0)
+  const bugParams = {
+    status: statusFilter === "all" ? undefined : statusFilter,
+    search: debouncedSearch || undefined,
+    page,
+    pageSize: PAGE_SIZE,
+  }
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      setLoading(true)
-      const result = await listBugs({
-        status: statusFilter === "all" ? undefined : statusFilter,
-        search: debouncedSearch || undefined,
-        page,
-        pageSize: PAGE_SIZE,
-      })
-      if (cancelled) return
-      setBugs(result.bugs)
-      setTotal(result.total)
-      setLoading(false)
-    }
-
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [statusFilter, debouncedSearch, page, refreshTick])
+  // `keepPreviousData` keeps showing the current page while the next one
+  // loads instead of flashing a spinner on every filter/page change.
+  const { data, isPending, isFetching } = useQuery({
+    queryKey: queryKeys.bugs(bugParams),
+    queryFn: () => listBugs(bugParams),
+    placeholderData: keepPreviousData,
+  })
+  const bugs = data?.bugs ?? []
+  const total = data?.total ?? 0
 
   function handleStatusChange(s: string) {
     setStatusFilter(s)
@@ -334,7 +326,6 @@ export default function BugListPage() {
         onSuccess={(msg) => {
           setToast(msg)
           setPage(1)
-          setRefreshTick((t) => t + 1)
         }}
       />
       {toast && <Toast message={toast} onDismiss={() => setToast("")} />}
@@ -343,8 +334,9 @@ export default function BugListPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Bugs</h1>
-            <p className="text-[var(--text-3)] mt-1">
+            <p className="text-[var(--text-3)] mt-1 flex items-center gap-2">
               {total} bug{total !== 1 ? "s" : ""} found
+              {isFetching && !isPending && <Loader2 className="h-3 w-3 animate-spin" />}
             </p>
           </div>
           <Button variant="default" onClick={() => setModalOpen(true)}>
@@ -386,7 +378,7 @@ export default function BugListPage() {
           />
         </div>
 
-        {loading ? (
+        {isPending ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
           </div>
@@ -463,7 +455,7 @@ export default function BugListPage() {
           </div>
         )}
 
-        {!loading && totalPages > 1 && (
+        {!isPending && totalPages > 1 && (
           <div className="flex items-center justify-between pt-2">
             <p className="text-xs text-[var(--text-3)] font-mono">
               Page {page} of {totalPages}

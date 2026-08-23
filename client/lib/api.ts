@@ -17,6 +17,7 @@ import type {
   NotificationsResponse,
   AppNotification,
   PaginatedBugs,
+  AnalyticsResult,
 } from "./types"
 
 import axios, { AxiosRequestConfig } from "axios"
@@ -305,4 +306,25 @@ export async function markNotificationRead(id: string): Promise<ApiResponse<AppN
 
 export async function markAllNotificationsRead(): Promise<ApiResponse<{ message: string }>> {
   return request<{ message: string }>("/notifications/read-all", { method: "POST" })
+}
+
+// ─── Analytics ────────────────────────────────────────────────────────────────
+
+const EMPTY_ANALYTICS: AnalyticsResult = {
+  totals: {
+    openBugs: 0,
+    criticalBugs: 0,
+    unassignedBugs: 0,
+    engineersOverloaded: 0,
+    duplicateRatePercent: 0,
+    avgTriageHours: null,
+  },
+  severityDistribution: [],
+  statusBreakdown: [],
+  moduleBreakdown: [],
+}
+
+export async function getAnalytics(): Promise<AnalyticsResult> {
+  const res = await request<AnalyticsResult>("/analytics", { cache: "no-store" })
+  return res.data ?? EMPTY_ANALYTICS
 }

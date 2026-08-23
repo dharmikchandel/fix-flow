@@ -257,10 +257,11 @@ npm run dev           # starts the Next.js app on http://localhost:3000
 | Script | Description |
 |---|---|
 | `npm run dev` | Run the API with hot reload (`tsx watch`) |
-| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run build` | Regenerate the Prisma client, then compile TypeScript to `dist/` |
 | `npm start` | Run the compiled server |
 | `npm run prisma:generate` | Generate the Prisma client |
-| `npm run prisma:migrate` | Run Prisma migrations |
+| `npm run prisma:migrate` | Create and apply a migration in development (interactive) |
+| `npm run prisma:deploy` | Apply pending migrations non-interactively — use this one in CI/production, never `prisma:migrate` |
 | `npm run prisma:studio` | Open Prisma Studio |
 | `npm run prisma:seed` | Wipe and reseed the database with two demo organizations, each with a manager, engineers, and bugs |
 

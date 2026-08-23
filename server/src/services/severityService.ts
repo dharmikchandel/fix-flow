@@ -43,6 +43,28 @@ const ENVIRONMENT_MULTIPLIER: Record<string, number> = {
 
 const DEFAULT_ENV_MULTIPLIER = 1.0;
 
+// ─── Confidence ───────────────────────────────────────────────────────────────
+
+// Label boundaries the score gets bucketed against (see scoreToLabel below).
+const LABEL_BOUNDARIES = [25, 50, 75];
+// A score this far from the nearest boundary is read as "fully confident" —
+// half the width of one label bucket.
+const MAX_MEANINGFUL_DISTANCE = 12.5;
+
+export interface SeverityBreakdown extends SeverityResult {
+  /**
+   * How far the score sits from the nearest Low/Medium/High/Critical
+   * boundary, expressed as 50–100%. A score of 74 (one point from being
+   * "Critical") is genuinely less certain than a score of 95 — this makes
+   * that visible instead of presenting every label with false certainty.
+   */
+  confidence: number;
+  keywordScore: number;
+  moduleScore: number;
+  depthBonus: number;
+  envMultiplier: number;
+}
+
 /**
  * Severity Calculation Service
  *
@@ -58,6 +80,23 @@ export function calculateSeverity(
   module: string,
   environment?: string,
 ): SeverityResult {
+  const { score, label } = explainSeverity(title, description, module, environment);
+  return { score, label };
+}
+
+/**
+ * Same computation as `calculateSeverity`, but also returns the pieces that
+ * went into the score and a confidence read on the label — the "receipt"
+ * behind an otherwise-opaque number. Used by the bug detail page's severity
+ * breakdown; recomputed on demand from the bug's own stored fields rather
+ * than stored separately, since it's fully deterministic from them.
+ */
+export function explainSeverity(
+  title: string,
+  description: string,
+  module: string,
+  environment?: string,
+): SeverityBreakdown {
   const combinedText = `${title} ${description}`.toLowerCase();
 
   // ── Keyword scoring ──────────────────────────────────────────────────────
@@ -104,10 +143,11 @@ export function calculateSeverity(
   // ── Clamp to 0–100 ──────────────────────────────────────────────────────
   const score = Math.max(0, Math.min(100, rawScore));
 
-  // ── Label mapping ────────────────────────────────────────────────────────
+  // ── Label + confidence ───────────────────────────────────────────────────
   const label = scoreToLabel(score);
+  const confidence = computeConfidence(score);
 
-  return { score, label };
+  return { score, label, confidence, keywordScore, moduleScore, depthBonus, envMultiplier };
 }
 
 function scoreToLabel(score: number): SeverityLabel {
@@ -115,4 +155,10 @@ function scoreToLabel(score: number): SeverityLabel {
   if (score >= 50) return "High";
   if (score >= 25) return "Medium";
   return "Low";
+}
+
+function computeConfidence(score: number): number {
+  const distance = Math.min(...LABEL_BOUNDARIES.map((b) => Math.abs(score - b)));
+  const normalized = Math.min(distance / MAX_MEANINGFUL_DISTANCE, 1);
+  return Math.round(50 + normalized * 50);
 }

@@ -3,16 +3,17 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Bug, ListTodo, Users, LogOut } from "lucide-react"
+import { LayoutDashboard, Bug, ListTodo, Users, BarChart2, LogOut } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-provider"
 
-// Analytics and Settings will be added back once those pages exist —
-// linking to them before then just produces a 404 from the sidebar.
+// Settings will be added back once that page exists — linking to it before
+// then would just produce a 404 from the sidebar.
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/bugs", label: "Bugs", icon: Bug },
   { href: "/triage", label: "Triage Queue", icon: ListTodo },
   { href: "/assignments", label: "Assignments", icon: Users },
+  { href: "/analytics", label: "Analytics", icon: BarChart2 },
 ]
 
 export function Sidebar() {
