@@ -7,12 +7,16 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  ArrowLeft, GitMerge, AlertCircle, CheckCircle2, Clock,
-  Loader2, X, UserCheck, RotateCcw
+  ArrowLeft, AlertCircle, Clock,
+  Loader2, X, UserCheck, RotateCcw, Send,
+  Paperclip, Download, Trash2, ArrowRight, FileText, Image as ImageIcon,
 } from "lucide-react"
-import { getBug, assignBug, unassignBug, updateBugStatus } from "@/lib/api"
+import {
+  getBug, assignBug, unassignBug, updateBugStatus,
+  listEvents, addComment, listAttachments, uploadAttachment, deleteAttachment, downloadAttachment,
+} from "@/lib/api"
 import { useAuth } from "@/components/auth/auth-provider"
-import type { Bug, BugStatus } from "@/lib/types"
+import type { Bug, BugStatus, BugEvent, Attachment } from "@/lib/types"
 import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
 
 const MANAGEMENT_ROLES = ["lead", "manager"]
@@ -34,6 +38,65 @@ function Toast({
   )
 }
 
+// ─── Activity row ─────────────────────────────────────────────────────────────
+
+function ActivityRow({ event }: { event: BugEvent }) {
+  const actorName = event.actor?.name ?? "Someone"
+  const when = new Date(event.createdAt).toLocaleString()
+
+  if (event.type === "comment") {
+    return (
+      <div className="flex gap-3">
+        <div className="mt-0.5 h-6 w-6 shrink-0 rounded-full bg-[var(--bg-3)] border border-[var(--border-1)] flex items-center justify-center text-[10px] font-semibold text-[var(--primary-strong)]">
+          {actorName.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--bg-1)] border border-[var(--border-1)] px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-[var(--text-1)]">{actorName}</span>
+            <span className="text-[10px] text-[var(--text-3)] font-mono">{when}</span>
+          </div>
+          <p className="text-sm text-[var(--text-2)] whitespace-pre-wrap mt-1">{event.comment}</p>
+        </div>
+      </div>
+    )
+  }
+
+  const meta: Record<Exclude<BugEvent["type"], "comment">, { icon: React.ReactNode; text: string }> = {
+    created: {
+      icon: <AlertCircle className="h-3 w-3 text-[var(--text-3)]" />,
+      text: `${actorName} reported this bug`,
+    },
+    status_changed: {
+      icon: <ArrowRight className="h-3 w-3 text-[var(--info)]" />,
+      text: `${actorName} changed status from "${event.fromStatus?.replace("_", " ")}" to "${event.toStatus?.replace("_", " ")}"`,
+    },
+    assigned: {
+      icon: <UserCheck className="h-3 w-3 text-[var(--primary-strong)]" />,
+      text: `${actorName} assigned this to ${event.assignee?.name ?? "an engineer"}`,
+    },
+    unassigned: {
+      icon: <RotateCcw className="h-3 w-3 text-[var(--danger)]" />,
+      text: `${actorName} unassigned ${event.assignee?.name ?? "the engineer"}`,
+    },
+  }
+  const info = meta[event.type]
+
+  return (
+    <div className="flex gap-3">
+      <div className="mt-0.5 rounded-full bg-[var(--bg-3)] p-1.5 border border-[var(--border-1)] shrink-0">
+        {info.icon}
+      </div>
+      <div>
+        <p className="text-xs text-[var(--text-1)]">{info.text}</p>
+        {event.reason && (
+          <p className="text-[10px] text-[var(--text-3)] font-mono mt-0.5">{event.reason}</p>
+        )}
+        <p className="text-[10px] text-[var(--text-3)] font-mono mt-0.5">{when}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function BugDetailPage({ params, }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const { id } = use(params)
@@ -45,6 +108,12 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
   const [isPending, startTransition] = useTransition()
 
+  const [events, setEvents] = useState<BugEvent[]>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [commentBody, setCommentBody] = useState("")
+  const [commentPending, startCommentTransition] = useTransition()
+  const [uploadPending, startUploadTransition] = useTransition()
+
   async function loadBug() {
     setLoading(true)
     const data = await getBug(id)
@@ -52,7 +121,16 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
     setLoading(false)
   }
 
-  useEffect(() => { loadBug() }, [id])
+  async function loadActivity() {
+    const [eventsData, attachmentsData] = await Promise.all([listEvents(id), listAttachments(id)])
+    setEvents(eventsData)
+    setAttachments(attachmentsData)
+  }
+
+  useEffect(() => {
+    loadBug()
+    loadActivity()
+  }, [id])
 
   function showToast(msg: string, type: "success" | "error" = "success") {
     setToast({ msg, type })
@@ -65,6 +143,7 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
       if (res.success && res.data) {
         showToast(`Assigned to ${res.data.engineerName}. Reason: ${res.data.reason}`)
         loadBug()
+        loadActivity()
       } else {
         showToast(res.error ?? "Assignment failed.", "error")
       }
@@ -77,6 +156,7 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
       if (res.success) {
         showToast("Bug unassigned successfully.")
         loadBug()
+        loadActivity()
       } else {
         showToast(res.error ?? "Unassign failed.", "error")
       }
@@ -89,10 +169,58 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
       if (res.success) {
         showToast(`Status updated to "${status}".`)
         loadBug()
+        loadActivity()
       } else {
         showToast(res.error ?? "Status update failed.", "error")
       }
     })
+  }
+
+  function handleAddComment(e: React.FormEvent) {
+    e.preventDefault()
+    if (!commentBody.trim()) return
+    startCommentTransition(async () => {
+      const res = await addComment(id, commentBody)
+      if (res.success) {
+        setCommentBody("")
+        loadActivity()
+      } else {
+        showToast(res.error ?? "Could not post comment.", "error")
+      }
+    })
+  }
+
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = "" // allow re-selecting the same file later
+    if (!file) return
+    startUploadTransition(async () => {
+      const res = await uploadAttachment(id, file)
+      if (res.success) {
+        loadActivity()
+      } else {
+        showToast(res.error ?? "Upload failed.", "error")
+      }
+    })
+  }
+
+  function handleDeleteAttachment(attachmentId: string) {
+    startUploadTransition(async () => {
+      const res = await deleteAttachment(attachmentId)
+      if (res.success) {
+        loadActivity()
+      } else {
+        showToast(res.error ?? "Could not remove attachment.", "error")
+      }
+    })
+  }
+
+  async function handleDownload(attachment: Attachment) {
+    try {
+      await downloadAttachment(attachment.id, attachment.fileName)
+    } catch {
+      showToast("Download failed.", "error")
+    }
   }
 
   if (loading) {
@@ -337,55 +465,116 @@ export default function BugDetailPage({ params, }: { params: Promise<{ id: strin
               </CardContent>
             </Card>
 
-            {/* Status timeline */}
+            {/* Attachments */}
             <Card>
               <CardHeader className="pb-3 border-b border-[var(--border-1)]">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-[var(--text-3)]" />
-                  Timeline
+                  <Paperclip className="h-4 w-4 text-[var(--text-3)]" />
+                  Attachments
                 </CardTitle>
               </CardHeader>
-              <CardContent className="pt-4 space-y-4">
-                <div className="flex gap-3">
-                  <div className="mt-0.5 rounded-full bg-[var(--bg-3)] p-1.5 border border-[var(--border-1)] shrink-0">
-                    <AlertCircle className="h-3 w-3 text-[var(--text-3)]" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-[var(--text-1)]">Bug reported</p>
-                    <p className="text-[10px] text-[var(--text-3)] font-mono mt-0.5">
-                      {new Date(bug.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                {bug.assignment && (
-                  <div className="flex gap-3">
-                    <div className="mt-0.5 rounded-full bg-[var(--primary-soft)] p-1.5 border border-[var(--primary-soft)] shrink-0">
-                      <CheckCircle2 className="h-3 w-3 text-[var(--primary-strong)]" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-[var(--text-1)]">Auto-assigned</p>
-                      <p className="text-[10px] text-[var(--text-3)] font-mono mt-0.5">
-                        {new Date(bug.assignment.createdAt).toLocaleString()}
-                      </p>
-                    </div>
+              <CardContent className="pt-4 space-y-3">
+                {attachments.length === 0 ? (
+                  <p className="text-xs text-[var(--text-3)] text-center py-2">No files attached yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {attachments.map((file) => {
+                      const isImage = file.mimeType.startsWith("image/")
+                      const canRemove = isManager || file.uploadedBy?.id === user?.id
+                      return (
+                        <div
+                          key={file.id}
+                          className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-1)] bg-[var(--bg-1)] px-2.5 py-2"
+                        >
+                          {isImage ? (
+                            <ImageIcon className="h-3.5 w-3.5 text-[var(--text-3)] shrink-0" />
+                          ) : (
+                            <FileText className="h-3.5 w-3.5 text-[var(--text-3)] shrink-0" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs text-[var(--text-1)] truncate">{file.fileName}</p>
+                            <p className="text-[10px] text-[var(--text-3)] font-mono">
+                              {(file.sizeBytes / 1024).toFixed(0)}KB
+                              {file.uploadedBy && ` • ${file.uploadedBy.name}`}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDownload(file)}
+                            title="Download"
+                            className="shrink-0 rounded p-1 text-[var(--text-3)] hover:bg-[var(--bg-2)] hover:text-[var(--primary-strong)] transition-colors"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                          {canRemove && (
+                            <button
+                              onClick={() => handleDeleteAttachment(file.id)}
+                              disabled={uploadPending}
+                              title="Remove"
+                              className="shrink-0 rounded p-1 text-[var(--text-3)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
-                {(bug.status === "resolved" || bug.status === "closed") && (
-                  <div className="flex gap-3">
-                    <div className="mt-0.5 rounded-full bg-[var(--success-soft)] p-1.5 border border-[var(--success-soft)] shrink-0">
-                      <CheckCircle2 className="h-3 w-3 text-[var(--success)]" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-[var(--success)]">
-                        {bug.status === "resolved" ? "Resolved" : "Closed"}
-                      </p>
-                    </div>
-                  </div>
-                )}
+
+                <label className="flex items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-[var(--border-2)] py-2.5 text-xs text-[var(--text-3)] hover:text-[var(--primary-strong)] hover:border-[var(--primary)] transition-colors cursor-pointer">
+                  {uploadPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Paperclip className="h-3.5 w-3.5" />
+                  )}
+                  Attach a file
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={handleUpload}
+                    disabled={uploadPending}
+                    accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain"
+                  />
+                </label>
+                <p className="text-[10px] text-[var(--text-3)] text-center">Images, PDF, or text — 5MB max</p>
               </CardContent>
             </Card>
           </div>
         </div>
+
+        {/* Activity: system events + comments, in order */}
+        <Card>
+          <CardHeader className="border-b border-[var(--border-1)]">
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-[var(--text-3)]" />
+              Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 space-y-4">
+            {events.length === 0 ? (
+              <p className="text-sm text-[var(--text-3)] text-center py-4">Nothing here yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {events.map((event) => (
+                  <ActivityRow key={event.id} event={event} />
+                ))}
+              </div>
+            )}
+
+            <form onSubmit={handleAddComment} className="flex items-start gap-2 pt-2 border-t border-[var(--border-1)]">
+              <textarea
+                value={commentBody}
+                onChange={(e) => setCommentBody(e.target.value)}
+                placeholder="Add a comment…"
+                rows={2}
+                className="flex-1 mt-3 rounded-[var(--radius-md)] border border-[var(--border-1)] bg-[var(--bg-1)] px-3 py-2 text-sm text-[var(--text-1)] placeholder:text-[var(--text-3)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-all resize-none"
+              />
+              <Button type="submit" size="sm" className="mt-3" disabled={commentPending || !commentBody.trim()}>
+                {commentPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     </>
   )

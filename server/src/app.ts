@@ -12,6 +12,8 @@ import bugRoutes from "./routes/bugRoutes.js";
 import assignmentRoutes from "./routes/assignmentRoutes.js";
 import priorityRoutes from "./routes/priorityRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+import attachmentRoutes from "./routes/attachmentRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 import { errorHandler } from "./utils/errorHandler.js";
 
 const app = express();
@@ -51,6 +53,8 @@ app.use("/api/bugs", bugRoutes);
 app.use("/api/assign", assignmentRoutes);
 app.use("/api/priority", priorityRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/attachments", attachmentRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

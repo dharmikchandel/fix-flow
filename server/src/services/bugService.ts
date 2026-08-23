@@ -1,6 +1,8 @@
 import prisma from "../config/database.js";
 import { calculateSeverity } from "./severityService.js";
 import { findDuplicates } from "./duplicateService.js";
+import { recordEvent } from "./eventService.js";
+import { notifyManagers, notifyUser } from "./notificationService.js";
 import { AppError } from "../utils/AppError.js";
 import type { CreateBugInput, BugSubmissionResponse } from "../models/types.js";
 
@@ -43,6 +45,18 @@ export async function submitBug(
     },
   });
 
+  await recordEvent({ bugId: bug.id, actorId: reporterId, type: "created" });
+
+  if (severity.label === "Critical") {
+    await notifyManagers(
+      organizationId,
+      reporterId,
+      bug.id,
+      "critical_bug",
+      `Critical bug reported: "${bug.title}"`,
+    );
+  }
+
   return {
     bugId: bug.id,
     severity,
@@ -71,29 +85,90 @@ export async function getBugById(bugId: string, organizationId: string) {
   });
 }
 
+export interface ListBugsOptions {
+  status?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PaginatedBugs {
+  bugs: Awaited<ReturnType<typeof getBugById>>[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
 /**
- * List all bugs in the caller's organization, with optional status filter,
- * ordered by creation date (newest first).
+ * List bugs in the caller's organization, newest first — optionally
+ * filtered by status and/or a free-text search over title and module, and
+ * always paginated so this stays fast as bug counts grow.
  */
-export async function listBugs(status: string | undefined, organizationId: string) {
-  return prisma.bugReport.findMany({
-    where: { organizationId, ...(status ? { status } : {}) },
-    include: WITH_ASSIGNEE,
-    orderBy: { createdAt: "desc" },
-  });
+export async function listBugs(organizationId: string, options: ListBugsOptions = {}): Promise<PaginatedBugs> {
+  const page = Math.max(options.page ?? 1, 1);
+  const pageSize = Math.min(Math.max(options.pageSize ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+  const search = options.search?.trim();
+
+  const where = {
+    organizationId,
+    ...(options.status ? { status: options.status } : {}),
+    ...(search
+      ? {
+          OR: [
+            { title: { contains: search, mode: "insensitive" as const } },
+            { module: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
+
+  const [bugs, total] = await Promise.all([
+    prisma.bugReport.findMany({
+      where,
+      include: WITH_ASSIGNEE,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.bugReport.count({ where }),
+  ]);
+
+  return { bugs, total, page, pageSize };
 }
 
 /**
  * Update bug status (e.g., open → in_progress → resolved → closed).
  */
-export async function updateBugStatus(bugId: string, status: string, organizationId: string) {
+export async function updateBugStatus(bugId: string, status: string, organizationId: string, actorId: string) {
   const bug = await prisma.bugReport.findFirst({ where: { id: bugId, organizationId } });
   if (!bug) {
     throw AppError.notFound(`Bug with ID "${bugId}" not found`);
   }
 
-  return prisma.bugReport.update({
+  const updated = await prisma.bugReport.update({
     where: { id: bugId },
     data: { status },
   });
+
+  await recordEvent({
+    bugId,
+    actorId,
+    type: "status_changed",
+    fromStatus: bug.status,
+    toStatus: status,
+  });
+
+  if (bug.reporterId && bug.reporterId !== actorId) {
+    await notifyUser(
+      bug.reporterId,
+      bugId,
+      "status_changed_on_your_bug",
+      `"${bug.title}" changed to ${status.replace("_", " ")}`,
+    );
+  }
+
+  return updated;
 }

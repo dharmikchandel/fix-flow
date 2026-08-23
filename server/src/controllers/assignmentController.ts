@@ -7,7 +7,7 @@ import type { ApiResponse, AssignmentResult } from "../models/types.js";
  */
 export async function assignBug(req: Request, res: Response): Promise<void> {
   const { bugId } = req.body;
-  const result = await assignmentService.assignBug(bugId, req.user!.organizationId);
+  const result = await assignmentService.assignBug(bugId, req.user!.organizationId, req.user!.id);
 
   const response: ApiResponse<AssignmentResult> = { success: true, data: result };
   res.status(200).json(response);
@@ -18,7 +18,7 @@ export async function assignBug(req: Request, res: Response): Promise<void> {
  */
 export async function assignBugManually(req: Request, res: Response): Promise<void> {
   const { bugId, engineerId } = req.body;
-  const result = await assignmentService.assignBugToEngineer(bugId, engineerId, req.user!.organizationId);
+  const result = await assignmentService.assignBugToEngineer(bugId, engineerId, req.user!.organizationId, req.user!.id);
 
   const response: ApiResponse<AssignmentResult> = { success: true, data: result };
   res.status(200).json(response);
@@ -28,6 +28,6 @@ export async function assignBugManually(req: Request, res: Response): Promise<vo
  * DELETE /assign/:bugId — Unassign a bug
  */
 export async function unassignBug(req: Request, res: Response): Promise<void> {
-  await assignmentService.unassignBug(String(req.params["bugId"]), req.user!.organizationId);
+  await assignmentService.unassignBug(String(req.params["bugId"]), req.user!.organizationId, req.user!.id);
   res.json({ success: true, data: { message: "Bug unassigned successfully" } });
 }

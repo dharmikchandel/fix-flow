@@ -144,3 +144,62 @@ export interface CreateInviteInput {
   expertise?: string[]
   maxCapacity?: number
 }
+
+// ─── Bug timeline (events + comments) ────────────────────────────────────────
+
+export type BugEventType = "created" | "status_changed" | "assigned" | "unassigned" | "comment"
+
+export interface BugEvent {
+  id: string
+  bugId: string
+  type: BugEventType
+  comment?: string | null
+  fromStatus?: string | null
+  toStatus?: string | null
+  reason?: string | null
+  createdAt: string
+  actor?: { id: string; name: string } | null
+  assignee?: { id: string; name: string } | null
+}
+
+// ─── Attachments ──────────────────────────────────────────────────────────────
+
+export interface Attachment {
+  id: string
+  fileName: string
+  mimeType: string
+  sizeBytes: number
+  createdAt: string
+  uploadedBy?: { id: string; name: string } | null
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+export type NotificationType =
+  | "bug_assigned"
+  | "critical_bug"
+  | "comment_on_your_bug"
+  | "status_changed_on_your_bug"
+
+export interface AppNotification {
+  id: string
+  type: NotificationType
+  message: string
+  bugId?: string | null
+  readAt?: string | null
+  createdAt: string
+}
+
+export interface NotificationsResponse {
+  notifications: AppNotification[]
+  unreadCount: number
+}
+
+// ─── Pagination ───────────────────────────────────────────────────────────────
+
+export interface PaginatedBugs {
+  bugs: Bug[]
+  total: number
+  page: number
+  pageSize: number
+}

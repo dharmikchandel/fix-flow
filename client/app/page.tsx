@@ -20,12 +20,14 @@ export default function Dashboard() {
 
     async function load() {
       const [bugsRes, engineersRes, queueRes] = await Promise.all([
-        listBugs(),
+        // Dashboard metrics want every bug, not one page of them — 100 is the
+        // server's page-size ceiling, comfortably above a small team's volume.
+        listBugs({ pageSize: 100 }),
         listUsers(),
         getPriorityQueue(),
       ])
       if (cancelled) return
-      setBugs(bugsRes)
+      setBugs(bugsRes.bugs)
       setEngineers(engineersRes)
       setQueue(queueRes)
       setLoading(false)

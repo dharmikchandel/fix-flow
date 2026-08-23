@@ -2,6 +2,7 @@ import "dotenv/config";
 import prisma from "../src/config/database.js";
 import { calculateSeverity } from "../src/services/severityService.js";
 import { assignBug } from "../src/services/assignmentService.js";
+import { recordEvent } from "../src/services/eventService.js";
 import bcrypt from "bcrypt";
 
 /**
@@ -172,6 +173,7 @@ async function seedOrganization(
       },
     });
     createdBugIds.push(created.id);
+    await recordEvent({ bugId: created.id, actorId: managerUser.id, type: "created" });
   }
 
   // Auto-assign roughly 60% of them; leave the rest open so the triage queue has work to show.
@@ -179,9 +181,30 @@ async function seedOrganization(
   const toAssign = createdBugIds.slice(0, assignCount);
   for (const bugId of toAssign) {
     try {
-      await assignBug(bugId, organization.id);
+      await assignBug(bugId, organization.id, managerUser.id);
     } catch (err) {
       console.warn(`  Could not auto-assign bug ${bugId}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  // A couple of demo comments on the first assigned bug, so the timeline
+  // isn't empty the first time you open a bug's detail page.
+  const [demoBugId] = toAssign;
+  if (demoBugId) {
+    const assignment = await prisma.assignment.findUnique({ where: { bugId: demoBugId } });
+    if (assignment) {
+      await recordEvent({
+        bugId: demoBugId,
+        actorId: assignment.userId,
+        type: "comment",
+        comment: "Taking a look now — will post an update once I've reproduced it locally.",
+      });
+      await recordEvent({
+        bugId: demoBugId,
+        actorId: managerUser.id,
+        type: "comment",
+        comment: "Thanks — flagging this as a priority since it's affecting production.",
+      });
     }
   }
 

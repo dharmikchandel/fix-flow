@@ -1,5 +1,7 @@
 import prisma from "../config/database.js";
 import { AppError } from "../utils/AppError.js";
+import { recordEvent } from "./eventService.js";
+import { notifyUser } from "./notificationService.js";
 import type { AssignmentResult } from "../models/types.js";
 
 const CLOSED_STATUSES = new Set(["resolved", "closed"]);
@@ -122,13 +124,27 @@ async function loadAssignableBug(bugId: string, organizationId: string) {
   return bug;
 }
 
+/** Records the "assigned" event and notifies the assignee — shared by both assignment paths. */
+async function announceAssignment(
+  bugId: string,
+  bugTitle: string,
+  actorId: string,
+  assignee: AssignmentCandidate,
+  reason: string,
+): Promise<void> {
+  await recordEvent({ bugId, actorId, type: "assigned", assigneeId: assignee.id, reason });
+  if (assignee.id !== actorId) {
+    await notifyUser(assignee.id, bugId, "bug_assigned", `You were assigned "${bugTitle}"`);
+  }
+}
+
 /**
  * Assign a bug to the best-fit engineer, per the rules in `selectAssignee`.
  * Retries a handful of times if two assignments race for the same engineer's
  * last capacity slot. Both the bug and the candidate engineers are scoped to
  * the caller's organization.
  */
-export async function assignBug(bugId: string, organizationId: string): Promise<AssignmentResult> {
+export async function assignBug(bugId: string, organizationId: string, actorId: string): Promise<AssignmentResult> {
   const bug = await loadAssignableBug(bugId, organizationId);
 
   for (let attempt = 1; attempt <= MAX_CLAIM_ATTEMPTS; attempt++) {
@@ -137,6 +153,7 @@ export async function assignBug(bugId: string, organizationId: string): Promise<
 
     try {
       await claimAssignment(bugId, assignee, reason);
+      await announceAssignment(bugId, bug.title, actorId, assignee, reason);
       return { assignedTo: assignee.id, engineerName: assignee.name, reason };
     } catch (err) {
       if (err instanceof WorkloadRaceError && attempt < MAX_CLAIM_ATTEMPTS) {
@@ -164,6 +181,7 @@ export async function assignBugToEngineer(
   bugId: string,
   engineerId: string,
   organizationId: string,
+  actorId: string,
 ): Promise<AssignmentResult> {
   const bug = await loadAssignableBug(bugId, organizationId);
 
@@ -188,6 +206,7 @@ export async function assignBugToEngineer(
 
     try {
       await claimAssignment(bugId, fresh, reason);
+      await announceAssignment(bugId, bug.title, actorId, fresh, reason);
       return { assignedTo: fresh.id, engineerName: fresh.name, reason };
     } catch (err) {
       if (err instanceof WorkloadRaceError && attempt < MAX_CLAIM_ATTEMPTS) {
@@ -209,7 +228,7 @@ export async function assignBugToEngineer(
  * rows don't carry their own organizationId — they're always looked up
  * through a bug, which is org-scoped).
  */
-export async function unassignBug(bugId: string, organizationId: string): Promise<void> {
+export async function unassignBug(bugId: string, organizationId: string, actorId: string): Promise<void> {
   const assignment = await prisma.assignment.findUnique({
     where: { bugId },
     include: { bug: { select: { organizationId: true } } },
@@ -230,4 +249,6 @@ export async function unassignBug(bugId: string, organizationId: string): Promis
       data: { status: "open" },
     }),
   ]);
+
+  await recordEvent({ bugId, actorId, type: "unassigned", assigneeId: assignment.userId });
 }

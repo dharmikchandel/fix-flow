@@ -19,13 +19,18 @@ export async function submitBug(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * GET /bugs — List all bugs (optional ?status= filter)
+ * GET /bugs — List bugs (optional ?status=, ?search=, ?page=, ?pageSize=)
  */
 export async function listBugs(req: Request, res: Response): Promise<void> {
-  const status = req.query["status"] as string | undefined;
-  const bugs = await bugService.listBugs(status, req.user!.organizationId);
+  const { status, search, page, pageSize } = req.query;
+  const result = await bugService.listBugs(req.user!.organizationId, {
+    status: typeof status === "string" ? status : undefined,
+    search: typeof search === "string" ? search : undefined,
+    page: page ? Number(page) : undefined,
+    pageSize: pageSize ? Number(pageSize) : undefined,
+  });
 
-  res.json({ success: true, data: bugs });
+  res.json({ success: true, data: result });
 }
 
 /**
@@ -46,6 +51,6 @@ export async function getBug(req: Request, res: Response): Promise<void> {
  */
 export async function updateStatus(req: Request, res: Response): Promise<void> {
   const { status } = req.body;
-  const bug = await bugService.updateBugStatus(String(req.params["id"]), status, req.user!.organizationId);
+  const bug = await bugService.updateBugStatus(String(req.params["id"]), status, req.user!.organizationId, req.user!.id);
   res.json({ success: true, data: bug });
 }

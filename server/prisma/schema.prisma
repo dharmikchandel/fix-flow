@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 model Organization {
@@ -21,25 +21,28 @@ model Organization {
 }
 
 model BugReport {
-  id               String    @id @default(cuid())
-  organizationId   String    @map("organization_id")
-  reporterId       String?   @map("reporter_id")
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+  reporterId       String?  @map("reporter_id")
   title            String
   description      String
-  stepsToReproduce String?   @map("steps_to_reproduce")
+  stepsToReproduce String?  @map("steps_to_reproduce")
   module           String
   environment      String?
-  severityScore    Int       @map("severity_score")
-  severityLabel    String    @map("severity_label")
-  status           String    @default("open")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  severityScore    Int      @map("severity_score")
+  severityLabel    String   @map("severity_label")
+  status           String   @default("open")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   // A bug outlives the reporter's account — deleting a user un-links their
   // reports instead of deleting them.
-  reporter     User?         @relation("ReportedBugs", fields: [reporterId], references: [id], onDelete: SetNull)
-  assignment   Assignment?
+  reporter      User?          @relation("ReportedBugs", fields: [reporterId], references: [id], onDelete: SetNull)
+  assignment    Assignment?
+  events        BugEvent[]
+  attachments   Attachment[]
+  notifications Notification[]
 
   @@index([organizationId])
   @@map("bug_reports")
@@ -59,9 +62,13 @@ model User {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assignments  Assignment[]
-  reportedBugs BugReport[]  @relation("ReportedBugs")
+  organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignments         Assignment[]
+  reportedBugs        BugReport[]    @relation("ReportedBugs")
+  eventsActed         BugEvent[]     @relation("BugEventActor")
+  eventsAssigned      BugEvent[]     @relation("BugEventAssignee")
+  attachmentsUploaded Attachment[]
+  notifications       Notification[]
 
   @@index([organizationId])
   @@map("users")
@@ -100,4 +107,71 @@ model Invite {
 
   @@index([organizationId])
   @@map("invites")
+}
+
+/// One unified, append-only timeline per bug: system events (created, status
+/// changed, assigned, unassigned) and user comments all live here, in order.
+/// The `Assignment` table above still tracks only the *current* assignment
+/// (and still gets deleted on unassign, same as before) — this table is what
+/// makes that history durable instead of destructive.
+model BugEvent {
+  id         String   @id @default(cuid())
+  bugId      String   @map("bug_id")
+  actorId    String?  @map("actor_id")
+  type       String
+  comment    String?
+  fromStatus String?  @map("from_status")
+  toStatus   String?  @map("to_status")
+  assigneeId String?  @map("assignee_id")
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  bug      BugReport @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  // If the person who acted (or was assigned) is later removed from the org,
+  // the historical event stays — it just loses the name behind it.
+  actor    User?     @relation("BugEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  assignee User?     @relation("BugEventAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([bugId, createdAt])
+  @@map("bug_events")
+}
+
+/// A file attached to a bug report (screenshot, log excerpt, ...). Stored
+/// directly in Postgres for now — simple and needs no extra infrastructure,
+/// at the cost of not scaling to large files or huge volumes. See the Phase 4
+/// report for the tradeoff and what a production version would use instead.
+model Attachment {
+  id           String   @id @default(cuid())
+  bugId        String   @map("bug_id")
+  uploadedById String?  @map("uploaded_by_id")
+  fileName     String   @map("file_name")
+  mimeType     String   @map("mime_type")
+  sizeBytes    Int      @map("size_bytes")
+  data         Bytes
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  bug        BugReport @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  uploadedBy User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([bugId])
+  @@map("attachments")
+}
+
+/// An in-app notification for one user. There's no email/SMS/Slack sending
+/// here — no such service is configured for this project — but this is the
+/// same event data any of those would eventually be triggered from.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  bugId     String?   @map("bug_id")
+  type      String
+  message   String
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bug  BugReport? @relation(fields: [bugId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
 }

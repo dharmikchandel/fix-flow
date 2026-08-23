@@ -86,6 +86,10 @@ export const createUserSchema = z.object({
   maxCapacity: z.number().int().min(1).max(20).optional(),
 });
 
+export const addCommentSchema = z.object({
+  body: z.string().min(1, "Comment can't be empty").max(3000, "Comment must not exceed 3000 characters"),
+});
+
 export type CreateBugPayload = z.infer<typeof createBugSchema>;
 export type AssignBugPayload = z.infer<typeof assignBugSchema>;
 export type CreateUserPayload = z.infer<typeof createUserSchema>;

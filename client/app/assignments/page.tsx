@@ -287,13 +287,14 @@ export default function AssignmentsPage() {
 
   async function loadData() {
     setLoading(true)
-    const [engs, bugs, pendingInvites] = await Promise.all([
+    const [engs, bugsPage, pendingInvites] = await Promise.all([
       listUsers(),
-      listBugs("open"),
+      // The assign-bug picker wants every open bug, not one page of them.
+      listBugs({ status: "open", pageSize: 100 }),
       isManager ? listInvites() : Promise.resolve([]),
     ])
     setEngineers(engs)
-    setUnassignedBugs(bugs.filter((b) => !b.assignment))
+    setUnassignedBugs(bugsPage.bugs.filter((b) => !b.assignment))
     setInvites(pendingInvites)
     setLoading(false)
   }

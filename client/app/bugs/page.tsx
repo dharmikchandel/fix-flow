@@ -1,16 +1,19 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Filter, X, Plus, Loader2, AlertCircle } from "lucide-react"
+import { Search, Filter, X, Plus, Loader2, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react"
 import { submitBug, listBugs } from "@/lib/api"
-import type { Bug, CreateBugInput, BugStatus } from "@/lib/types"
+import type { Bug, CreateBugInput } from "@/lib/types"
 import { severityVariant, statusVariant, timeAgo } from "@/lib/badge-helpers"
+
+const PAGE_SIZE = 20
+const SEARCH_DEBOUNCE_MS = 350
 
 // ─── Report Bug Modal ─────────────────────────────────────────────────────────
 
@@ -242,7 +245,7 @@ function FilterPanel({
                 : "border-[var(--border-1)] text-[var(--text-3)] hover:border-[var(--border-2)] hover:text-[var(--text-1)]"
             }`}
           >
-            {s === "all" ? "All" : s.replace("_", " ")}
+            {s === "all" ? "all" : s.replace("_", " ")}
           </button>
         ))}
       </div>
@@ -266,45 +269,62 @@ function Toast({ message, onDismiss }: { message: string; onDismiss: () => void 
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function BugListPage({ bugs: initialBugs }: { bugs?: Bug[] }) {
+export default function BugListPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [bugs, setBugs] = useState<Bug[]>(initialBugs ?? [])
+  const [page, setPage] = useState(1)
+  const [bugs, setBugs] = useState<Bug[]>([])
+  const [total, setTotal] = useState(0)
   const [toast, setToast] = useState("")
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  async function fetchBugs(status?: string) {
-    setLoading(true)
-    try {
-      const bgs = await listBugs(status === "all" ? undefined : status)
-      setBugs(bgs)
-    } finally {
+  // Debounce the search box — waits for a pause in typing, then resets to
+  // page 1 (React batches these two updates, so this only triggers one fetch).
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  // Bumped after submitting a new bug to force a refetch of the current page
+  // without duplicating the fetch logic below.
+  const [refreshTick, setRefreshTick] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+      const result = await listBugs({
+        status: statusFilter === "all" ? undefined : statusFilter,
+        search: debouncedSearch || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      })
+      if (cancelled) return
+      setBugs(result.bugs)
+      setTotal(result.total)
       setLoading(false)
     }
-  }
 
-  // Load bugs on mount
-  useState(() => {
-    fetchBugs()
-  })
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [statusFilter, debouncedSearch, page, refreshTick])
 
   function handleStatusChange(s: string) {
     setStatusFilter(s)
-    fetchBugs(s === "all" ? undefined : s)
+    setPage(1)
   }
 
-  const filtered = bugs.filter((b) => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (
-      b.title.toLowerCase().includes(q) ||
-      b.module.toLowerCase().includes(q) ||
-      b.id.toLowerCase().includes(q)
-    )
-  })
+  const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1)
 
   return (
     <>
@@ -313,7 +333,8 @@ export default function BugListPage({ bugs: initialBugs }: { bugs?: Bug[] }) {
         onClose={() => setModalOpen(false)}
         onSuccess={(msg) => {
           setToast(msg)
-          fetchBugs(statusFilter === "all" ? undefined : statusFilter)
+          setPage(1)
+          setRefreshTick((t) => t + 1)
         }}
       />
       {toast && <Toast message={toast} onDismiss={() => setToast("")} />}
@@ -323,7 +344,7 @@ export default function BugListPage({ bugs: initialBugs }: { bugs?: Bug[] }) {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Bugs</h1>
             <p className="text-[var(--text-3)] mt-1">
-              {filtered.length} bug{filtered.length !== 1 ? "s" : ""} found
+              {total} bug{total !== 1 ? "s" : ""} found
             </p>
           </div>
           <Button variant="default" onClick={() => setModalOpen(true)}>
@@ -336,7 +357,7 @@ export default function BugListPage({ bugs: initialBugs }: { bugs?: Bug[] }) {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-3)]" />
               <Input
-                placeholder="Search by title, module, or ID..."
+                placeholder="Search by title or module..."
                 className="pl-9"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -369,7 +390,7 @@ export default function BugListPage({ bugs: initialBugs }: { bugs?: Bug[] }) {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : bugs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <AlertCircle className="h-10 w-10 text-[var(--text-3)] mb-3" />
             <p className="text-[var(--text-2)] font-medium">No bugs found</p>
@@ -379,7 +400,7 @@ export default function BugListPage({ bugs: initialBugs }: { bugs?: Bug[] }) {
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map((bug) => (
+            {bugs.map((bug) => (
               <Link key={bug.id} href={`/bugs/${bug.id}`}>
                 <Card className="hover:border-[var(--primary-soft)] hover:shadow-[var(--shadow-glow-primary)] cursor-pointer group transition-all">
                   <CardContent className="p-4">
@@ -439,6 +460,32 @@ export default function BugListPage({ bugs: initialBugs }: { bugs?: Bug[] }) {
                 </Card>
               </Link>
             ))}
+          </div>
+        )}
+
+        {!loading && totalPages > 1 && (
+          <div className="flex items-center justify-between pt-2">
+            <p className="text-xs text-[var(--text-3)] font-mono">
+              Page {page} of {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                disabled={page <= 1}
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                disabled={page >= totalPages}
+              >
+                Next <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
           </div>
         )}
       </div>

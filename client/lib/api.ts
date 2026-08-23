@@ -12,6 +12,11 @@ import type {
   RegisterInput,
   Invite,
   CreateInviteInput,
+  BugEvent,
+  Attachment,
+  NotificationsResponse,
+  AppNotification,
+  PaginatedBugs,
 } from "./types"
 
 import axios, { AxiosRequestConfig } from "axios"
@@ -74,12 +79,25 @@ async function request<T>(
 
 // ─── Bugs ─────────────────────────────────────────────────────────────────────
 
-export async function listBugs(status?: string): Promise<Bug[]> {
-  const qs = status ? `?status=${status}` : ""
-  const res = await request<Bug[]>(`/bugs${qs}`, {
-    cache: "no-store",
-  })
-  return res.data ?? []
+export interface ListBugsOptions {
+  status?: string
+  search?: string
+  page?: number
+  pageSize?: number
+}
+
+const EMPTY_PAGE: PaginatedBugs = { bugs: [], total: 0, page: 1, pageSize: 20 }
+
+export async function listBugs(options: ListBugsOptions = {}): Promise<PaginatedBugs> {
+  const params = new URLSearchParams()
+  if (options.status) params.set("status", options.status)
+  if (options.search) params.set("search", options.search)
+  if (options.page) params.set("page", String(options.page))
+  if (options.pageSize) params.set("pageSize", String(options.pageSize))
+  const qs = params.toString() ? `?${params.toString()}` : ""
+
+  const res = await request<PaginatedBugs>(`/bugs${qs}`, { cache: "no-store" })
+  return res.data ?? EMPTY_PAGE
 }
 
 export async function getBug(id: string): Promise<Bug | null> {
@@ -215,4 +233,76 @@ export async function acceptInvite(
     method: "POST",
     body: JSON.stringify({ token, name, password }),
   })
+}
+
+// ─── Bug timeline (events + comments) ────────────────────────────────────────
+
+export async function listEvents(bugId: string): Promise<BugEvent[]> {
+  const res = await request<BugEvent[]>(`/bugs/${bugId}/events`, { cache: "no-store" })
+  return res.data ?? []
+}
+
+export async function addComment(bugId: string, body: string): Promise<ApiResponse<BugEvent>> {
+  return request<BugEvent>(`/bugs/${bugId}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  })
+}
+
+// ─── Attachments ──────────────────────────────────────────────────────────────
+
+export async function listAttachments(bugId: string): Promise<Attachment[]> {
+  const res = await request<Attachment[]>(`/bugs/${bugId}/attachments`, { cache: "no-store" })
+  return res.data ?? []
+}
+
+export async function uploadAttachment(bugId: string, file: File): Promise<ApiResponse<Attachment>> {
+  const form = new FormData()
+  form.append("file", file)
+  try {
+    // The shared client defaults to "Content-Type: application/json" — override
+    // it to `undefined` here so the browser sets the multipart boundary itself
+    // instead of axios sending the wrong content type with a FormData body.
+    const res = await client.post<ApiResponse<Attachment>>(`/bugs/${bugId}/attachments`, form, {
+      headers: { "Content-Type": undefined },
+    })
+    return res.data
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error)) {
+      return (error.response?.data as ApiResponse<Attachment>) || { success: false, error: error.message }
+    }
+    return { success: false, error: "Network error or server unreachable" }
+  }
+}
+
+export async function deleteAttachment(attachmentId: string): Promise<ApiResponse<{ message: string }>> {
+  return request<{ message: string }>(`/attachments/${attachmentId}`, { method: "DELETE" })
+}
+
+/** Downloads a file with the logged-in user's auth header and saves it via the browser. */
+export async function downloadAttachment(attachmentId: string, fileName: string): Promise<void> {
+  const res = await client.get(`/attachments/${attachmentId}`, { responseType: "blob" })
+  const url = window.URL.createObjectURL(res.data as Blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(url)
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+export async function listNotifications(): Promise<NotificationsResponse> {
+  const res = await request<NotificationsResponse>("/notifications", { cache: "no-store" })
+  return res.data ?? { notifications: [], unreadCount: 0 }
+}
+
+export async function markNotificationRead(id: string): Promise<ApiResponse<AppNotification>> {
+  return request<AppNotification>(`/notifications/${id}/read`, { method: "PATCH" })
+}
+
+export async function markAllNotificationsRead(): Promise<ApiResponse<{ message: string }>> {
+  return request<{ message: string }>("/notifications/read-all", { method: "POST" })
 }
