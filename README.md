@@ -1,12 +1,14 @@
-# FixFlow
+# 𖢥 FixFlow
 
-**A bug tracker that triages itself.**
+> **A bug tracker that triages itself.**
 
 FixFlow is a tool for engineering teams to report, sort, and fix bugs without the usual busywork. When someone submits a bug, FixFlow automatically figures out how serious it is, checks whether it's a duplicate of something already reported, and assigns it to the engineer best suited to fix it — all using clear, fixed rules instead of a black-box AI model, so anyone on the team can see exactly *why* a bug was scored or assigned the way it was.
 
 It's built for more than one team at a time: each company or team that signs up gets its own private space, completely separate from everyone else's.
 
-*Live demo:** https://fixflow.dharmikchandel.tech
+## 🌐 Try it yourself here
+
+> **https://fixflow.dharmikchandel.tech**
 
 ---
 
@@ -33,7 +35,7 @@ It's built for more than one team at a time: each company or team that signs up 
 
 ---
 
-## What FixFlow does
+## 📌 What FixFlow does
 
 **Triage, automatically**
 - **Bug intake** — anyone on the team can submit a bug with a title, description, steps to reproduce, which part of the product it's in, and where it happened (production, staging, etc.)
@@ -59,7 +61,7 @@ It's built for more than one team at a time: each company or team that signs up 
 **The look**
 - **Dark, command-center UI** — a Next.js dashboard styled like an engineering control room: dark surfaces, restrained neon accents used only for status and emphasis, and monospace type for technical details like IDs and timestamps.
 
-## Tech stack
+## 🛠️ Tech stack
 
 **Backend** (`server/`)
 - Node.js + TypeScript
@@ -75,7 +77,7 @@ It's built for more than one team at a time: each company or team that signs up 
 - Axios API client
 - shadcn/ui-style component primitives
 
-## Project structure
+## 📂 Project structure
 
 ```
 fix-flow/
@@ -113,7 +115,7 @@ fix-flow/
     └── PRD.md                     # Original product requirements document
 ```
 
-## How the triage engine works
+## 🧠 How the triage engine works
 
 This is the part of FixFlow that does the actual thinking. All four pieces below are plain, fixed rules — not machine learning — so the same bug report always produces the same result, and anyone can look at the code and understand exactly why.
 
@@ -153,7 +155,7 @@ priority score = severity × 0.6 + age × 0.3 + (unassigned bonus) × 0.1
 
 Older bugs and unassigned bugs both get nudged up the list, so nothing sits forgotten just because it wasn't the most severe thing reported today. The list is recalculated fresh every time it's requested.
 
-## How accounts and teams work
+## 👤 How accounts and teams work
 
 Every person who uses FixFlow belongs to exactly one **organization** — the workspace for their company or team. Two organizations never see each other's bugs, engineers, or stats, even though they're running on the same FixFlow install.
 
@@ -161,7 +163,7 @@ Every person who uses FixFlow belongs to exactly one **organization** — the wo
 - **Growing a team** — a lead or manager creates an invite link for a teammate's email address. The invited person opens the link and picks their own name and password — nobody else ever knows it.
 - **Roles** — every account is an `engineer`, `lead`, or `manager`. Engineers can report bugs, comment, and toggle their own availability. Leads and managers can additionally dispatch bugs to engineers and invite new teammates.
 
-## Data model
+## ⛁ Data model
 
 Defined in `server/prisma/schema.prisma`:
 
@@ -238,7 +240,7 @@ POST /api/bugs
 }
 ```
 
-## Getting started
+## 🚀 Getting started
 
 ### Prerequisites
 
@@ -276,7 +278,7 @@ cp .env.example .env.local
 npm run dev           # starts the Next.js app on http://localhost:3000
 ```
 
-## Environment variables
+## 🔐 Environment variables
 
 Both `server/` and `client/` have a `.env.example` file with every variable explained inline — copy it and fill in real values rather than retyping from scratch.
 
